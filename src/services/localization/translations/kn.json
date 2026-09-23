@@ -1,0 +1,80 @@
+{
+  "navigation": {
+    "dashboard": "ಡ್ಯಾಶ್‌ಬೋರ್ಡ್",
+    "orders": "ಆರ್ಡರ್‌ಗಳು",
+    "farmers": "ರೈತರು",
+    "buyers": "ಖರೀದಿದಾರರು",
+    "employees": "ಉದ್ಯೋಗಿಗಳು",
+    "deliveries": "ವಿತರಣೆಗಳು",
+    "products": "ಉತ್ಪನ್ನಗಳು",
+    "payments": "ಪಾವತಿಗಳು",
+    "earnings": "ಗಳಿಕೆಗಳು",
+    "reports": "ವರದಿಗಳು",
+    "notifications": "ಅಧಿಸೂಚನೆಗಳು",
+    "disputes": "ವಿವಾದಗಳು",
+    "settings": "ಸೆಟ್ಟಿಂಗ್‌ಗಳು",
+    "logout": "ಲಾಗ್ ಔಟ್",
+    "profile": "ಪ್ರೊಫೈಲ್",
+    "deliveryPartners": "ವಿತರಣಾ ಪಾಲುದಾರರು",
+    "vehicles": "ವಾಹನಗಳು",
+    "liveTracking": "ಲೈವ್ ಟ್ರ್ಯಾಕಿಂಗ್"
+  },
+  "dashboard": {
+    "welcome": "ಮರಳಿ ಸ್ವಾಗತ",
+    "totalOrders": "ಒಟ್ಟು ಆರ್ಡರ್‌ಗಳು",
+    "revenue": "ಆದಾಯ",
+    "ordersOverview": "ಆರ್ಡರ್‌ಗಳ ಅವಲೋಕನ",
+    "pending": "ಬಾಕಿ ಉಳಿದಿದೆ",
+    "processing": "ಪ್ರಕ್ರಿಯೆಯಲ್ಲಿದೆ",
+    "shipped": "ರವಾಣಿಸಲಾಗಿದೆ",
+    "delivered": "ತಲುಪಿಸಲಾಗಿದೆ"
+  },
+  "voice": {
+    "assistant": "ಧ್ವನಿ ಸಹಾಯಕ",
+    "tapToSpeak": "ಮಾತನಾಡಲು ಟ್ಯಾಪ್ ಮಾಡಿ",
+    "listening": "ಆಲಿಸುತ್ತಿದೆ...",
+    "processing": "ಯೋಚಿಸುತ್ತಿದೆ...",
+    "speaking": "ಮಾತನಾಡುತ್ತಿದೆ...",
+    "microphonePermission": "ಮೈಕ್ರೊಫೋನ್ ಅನುಮತಿ ಅಗತ್ಯವಿದೆ.",
+    "couldNotUnderstand": "ಕ್ಷಮಿಸಿ, ನನಗೆ ಅರ್ಥವಾಗಲಿಲ್ಲ.",
+    "tryAgain": "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",
+    "stop": "ನಿಲ್ಲಿಸಿ",
+    "close": "ಮುಚ್ಚಿ"
+  },
+  "common": {
+    "cancel": "ರದ್ದುಮಾಡಿ",
+    "confirm": "ಖಚಿತಪಡಿಸಿ",
+    "save": "ಉಳಿಸಿ",
+    "delete": "ಅಳಿಸಿ",
+    "edit": "ಸಂಪಾದಿಸಿ",
+    "search": "ಹುಡುಕಿ..."
+  },
+  "settings": {
+    "language": "ಭಾಷೆ",
+    "selectLanguage": "ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ",
+    "autoDetect": "ಭಾಷೆಯನ್ನು ಸ್ವಯಂ ಪತ್ತೆಹಚ್ಚಿ",
+    "voiceEnabled": "ಧ್ವನಿ ಸಹಾಯಕ ಸಕ್ರಿಯಗೊಳಿಸಲಾಗಿದೆ"
+  },
+  "driver": {
+    "dashboard": "ಚಾಲಕ ಡ್ಯಾಶ್‌ಬೋರ್ಡ್",
+    "myDeliveries": "ನನ್ನ ವಿತರಣೆಗಳು",
+    "currentDelivery": "ಪ್ರಸ್ತುತ ವಿತರಣೆ",
+    "goOnline": "ಆನ್‌ಲೈನ್‌ಗೆ ಹೋಗಿ",
+    "goOffline": "ಆಫ್‌ಲೈನ್‌ಗೆ ಹೋಗಿ",
+    "assigned": "ನಿಯೋಜಿಸಲಾಗಿದೆ",
+    "accepted": "ಅಂಗೀಕರಿಸಲಾಗಿದೆ",
+    "enRoute": "ಮಾರ್ಗದಲ್ಲಿ",
+    "arrivedAtFarm": "ಜಮೀನಿಗೆ ತಲುಪಿದೆ",
+    "pickedUp": "ಪಡೆದುಕೊಂಡಿದೆ",
+    "inTransit": "ಸಾಗಣೆಯಲ್ಲಿದೆ",
+    "arrivedAtDestination": "ಗಮ್ಯಸ್ಥಾನವನ್ನು ತಲುಪಿದೆ",
+    "delivered": "ವಿತರಿಸಲಾಗಿದೆ",
+    "proofOfDelivery": "ವಿತರಣೆಯ ಪುರಾವೆ",
+    "noAssignedDeliveries": "ಇನ್ನೂ ಯಾವುದೇ ವಿತರಣೆಗಳನ್ನು ನಿಯೋಜಿಸಲಾಗಿಲ್ಲ",
+    "todayDeliveries": "ಇಂದಿನ ವಿತರಣೆಗಳು",
+    "confirmDelivery": "ವಿತರಣೆಯನ್ನು ಖಚಿತಪಡಿಸಿ",
+    "recipientName": "ಸ್ವೀಕರಿಸುವವರ ಹೆಸರು",
+    "deliveryNotes": "ವಿತರಣಾ ಟಿಪ್ಪಣಿಗಳು",
+    "takePhoto": "ಫೋಟೋ ತೆಗೆದುಕೊಳ್ಳಿ"
+  }
+}
