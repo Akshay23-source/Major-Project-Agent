@@ -15,6 +15,7 @@ const SIDEBAR_WIDTH = 280;
 const NAV_ITEMS = [
   { nameKey: 'navigation.dashboard', fallback: 'Dashboard', route: '/dashboard', icon: 'grid-outline' },
   { nameKey: 'navigation.orders', fallback: 'Orders', route: '/orders', icon: 'cart-outline' },
+  { nameKey: 'navigation.marketplaceOrders', fallback: 'Marketplace Orders', route: '/marketplace', icon: 'storefront-outline' },
   { nameKey: 'navigation.farmers', fallback: 'Farmers', route: '/farmers', icon: 'leaf-outline' },
   { nameKey: 'navigation.buyers', fallback: 'Buyers', route: '/buyers', icon: 'business-outline' },
   { nameKey: 'navigation.employees', fallback: 'Employees', route: '/employees', icon: 'people-outline' },

@@ -7,6 +7,7 @@ import { getOrderById } from '../../../../src/services/orders';
 import { getAvailablePartners, getAvailableVehicles, assignDelivery, assignVehicle, createPickup, createDelivery, Vehicle, DeliveryPartner } from '../../../../src/services/logistics';
 import { AppHeader } from '../../../../src/components/ui/AppHeader';
 import { StatusBadge } from '../../../../src/components/ui/StatusBadge';
+import { kickMarketplaceSync } from '../../../../src/services/integration/marketplaceSync';
 
 export default function LogisticsWorkspaceScreen() {
   const { id } = useLocalSearchParams();
@@ -64,7 +65,7 @@ export default function LogisticsWorkspaceScreen() {
         order_id: order.id,
         delivery_partner_id: selectedPartner,
         vehicle_id: selectedVehicle,
-        pickup_location: order.farmers?.location || 'Unknown',
+        pickup_location: order.pickup_address || order.farmers?.location || 'Unknown',
         drop_location: order.delivery_location || 'Unknown'
       });
 
@@ -79,6 +80,9 @@ export default function LogisticsWorkspaceScreen() {
         delivery_partner_id: selectedPartner,
         vehicle_id: selectedVehicle
       });
+
+      // Assignment events are queued for the Farm Marketplace by DB triggers
+      kickMarketplaceSync();
 
       Alert.alert("Success", "Dispatch complete! Driver and vehicle assigned.");
       router.back();
@@ -121,9 +125,13 @@ export default function LogisticsWorkspaceScreen() {
             </View>
             <View style={styles.detailItem}>
               <Text style={styles.detailLabel}>Payment</Text>
-              <Text style={[styles.detailValue, { color: order.payment_status === 'PAID' ? Colors.success : Colors.error }]}>
-                {order.payment_status}
-              </Text>
+              {order.source === 'MARKETPLACE' ? (
+                <Text style={styles.detailValue}>Handled by marketplace</Text>
+              ) : (
+                <Text style={[styles.detailValue, { color: order.payment_status === 'PAID' ? Colors.success : Colors.error }]}>
+                  {order.payment_status}
+                </Text>
+              )}
             </View>
             <View style={styles.detailItem}>
               <Text style={styles.detailLabel}>Priority</Text>
@@ -140,9 +148,9 @@ export default function LogisticsWorkspaceScreen() {
             <Ionicons name="leaf-outline" size={20} color={Colors.primaryDark} />
             <Text style={styles.sectionTitle}>Farmer Pickup</Text>
           </View>
-          <Text style={styles.primaryText}>{order.farmers?.name}</Text>
-          <Text style={styles.secondaryText}>{order.farmers?.phone}</Text>
-          <Text style={styles.secondaryText}>{order.farmers?.location}</Text>
+          <Text style={styles.primaryText}>{order.farmers?.name || order.pickup_contact_name}</Text>
+          <Text style={styles.secondaryText}>{order.farmers?.phone || order.pickup_contact_phone}</Text>
+          <Text style={styles.secondaryText}>{order.pickup_address || order.farmers?.location}</Text>
         </View>
 
         {/* CUSTOMER DELIVERY */}
@@ -151,8 +159,8 @@ export default function LogisticsWorkspaceScreen() {
             <Ionicons name="location-outline" size={20} color={Colors.primaryDark} />
             <Text style={styles.sectionTitle}>Customer Delivery</Text>
           </View>
-          <Text style={styles.primaryText}>{order.buyers?.name}</Text>
-          <Text style={styles.secondaryText}>{order.buyers?.phone}</Text>
+          <Text style={styles.primaryText}>{order.buyers?.name || order.drop_contact_name}</Text>
+          <Text style={styles.secondaryText}>{order.buyers?.phone || order.drop_contact_phone}</Text>
           <Text style={styles.secondaryText}>{order.delivery_location}</Text>
         </View>
 

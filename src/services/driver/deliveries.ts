@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase';
 import { getCurrentDriver } from './auth';
 import { DeliveryStatus } from '../logistics';
 import * as Location from 'expo-location';
+import { kickMarketplaceSync } from '../integration/marketplaceSync';
 
 export type DriverDeliveryStatus = 
   | 'ASSIGNED'
@@ -147,6 +148,10 @@ export const transitionDriverStatus = async (
   if (newStatus === 'DELIVERED') {
     await supabase.from('delivery_partners').update({ status: 'ONLINE' }).eq('id', driver.id);
   }
+
+  // The event above is queued for the Farm Marketplace by a DB trigger;
+  // nudge the callback worker so the buyer sees it right away.
+  kickMarketplaceSync();
 
   return true;
 };

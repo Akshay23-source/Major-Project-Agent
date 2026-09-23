@@ -15,6 +15,8 @@ import { Colors } from '../../../src/theme/colors';
 import { StatusBadge } from '../../../src/components/ui/StatusBadge';
 import { supabase } from '../../../src/lib/supabase';
 import { getDeliveryPartners } from '../../../src/services/logistics';
+import { getCurrentAgent } from '../../../src/services/agent';
+import { kickMarketplaceSync } from '../../../src/services/integration/marketplaceSync';
 
 export default function DispatchScreen() {
   const router = useRouter();
@@ -92,12 +94,18 @@ export default function DispatchScreen() {
       if (deliveries && deliveries.length > 0) {
         const deliveryId = deliveries[0].id;
         await supabase.from('deliveries').update({ status: newStatus }).eq('id', deliveryId);
-        await supabase.from('delivery_events').insert({
+        // agent_id is required by the "Agents can insert delivery events" RLS policy
+        const agent = await getCurrentAgent();
+        const { error: evtErr } = await supabase.from('delivery_events').insert({
           delivery_id: deliveryId,
+          agent_id: agent?.id,
           event_type: newStatus,
           description: `Status updated to ${newStatus} by Agent`
         });
+        if (evtErr) console.error('Failed to record delivery event:', evtErr.message);
       }
+
+      kickMarketplaceSync();
 
       Alert.alert("Success", `Status updated to ${newStatus}.`);
       loadData();
@@ -123,8 +131,8 @@ export default function DispatchScreen() {
           delivery_partner_id: selectedPartnerId,
           status: 'PICKUP_ASSIGNED',
           delivery_number: `DEL-${Date.now().toString().substring(7)}`,
-          pickup_location: order.farmers?.village || 'Farm',
-          drop_location: order.buyers?.city || 'City'
+          pickup_location: order.pickup_address || order.farmers?.village || 'Farm',
+          drop_location: order.delivery_location || order.buyers?.city || 'City'
         })
         .select('id')
         .single();
@@ -134,12 +142,16 @@ export default function DispatchScreen() {
       // 2. Update order logistics status
       await supabase.from('orders').update({ logistics_status: 'PICKUP_ASSIGNED' }).eq('id', id);
 
-      // 3. Add Event
-      await supabase.from('delivery_events').insert({
+      // 3. Add Event (agent_id is required by the delivery_events insert RLS policy)
+      const agent = await getCurrentAgent();
+      const { error: evtErr } = await supabase.from('delivery_events').insert({
         delivery_id: delivery.id,
+        agent_id: agent?.id,
         event_type: 'ASSIGNED',
         description: `Driver Assigned for Pickup`
       });
+      if (evtErr) console.error('Failed to record delivery event:', evtErr.message);
+      kickMarketplaceSync();
 
       Alert.alert("Success", "Driver assigned successfully.");
       loadData();
@@ -282,8 +294,10 @@ export default function DispatchScreen() {
             </View>
             <View style={styles.locInfo}>
               <Text style={styles.locLabel}>Pickup from Farmer</Text>
-              <Text style={styles.locName}>{order.farmers?.name}</Text>
-              <Text style={styles.locAddress}>{order.farmers?.village}, {order.farmers?.district}</Text>
+              <Text style={styles.locName}>{order.farmers?.name || order.pickup_contact_name}</Text>
+              <Text style={styles.locAddress}>
+                {order.farmers ? `${order.farmers.village}, ${order.farmers.district}` : order.pickup_address}
+              </Text>
             </View>
           </View>
           <View style={styles.locLine} />
@@ -293,8 +307,10 @@ export default function DispatchScreen() {
             </View>
             <View style={styles.locInfo}>
               <Text style={styles.locLabel}>Deliver to Buyer</Text>
-              <Text style={styles.locName}>{order.buyers?.name}</Text>
-              <Text style={styles.locAddress}>{order.buyers?.city}, {order.buyers?.state}</Text>
+              <Text style={styles.locName}>{order.buyers?.name || order.drop_contact_name}</Text>
+              <Text style={styles.locAddress}>
+                {order.buyers ? `${order.buyers.city}, ${order.buyers.state}` : order.delivery_location}
+              </Text>
             </View>
           </View>
         </View>

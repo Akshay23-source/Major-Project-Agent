@@ -2,6 +2,7 @@
   "navigation": {
     "dashboard": "Dashboard",
     "orders": "Orders",
+    "marketplaceOrders": "Marketplace Orders",
     "farmers": "Farmers",
     "buyers": "Buyers",
     "employees": "Employees",

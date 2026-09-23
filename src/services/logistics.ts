@@ -52,6 +52,7 @@ export interface Pickup {
 
 export interface Delivery {
   id: string;
+  delivery_number?: string;
   order_id: string;
   delivery_partner_id?: string;
   vehicle_id?: string;
@@ -197,6 +198,8 @@ export const createDelivery = async (deliveryData: Partial<Delivery>): Promise<D
     .from('deliveries')
     .insert({
       ...deliveryData,
+      // deliveries.delivery_number is NOT NULL; without it this insert always failed
+      delivery_number: deliveryData.delivery_number || `DLV-${Date.now().toString(36).toUpperCase()}`,
       status: 'AWAITING_PICKUP',
       logistics_tracking_status: 'ASSIGNED'
     })

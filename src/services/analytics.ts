@@ -174,7 +174,7 @@ export const getTopProducts = async (period: Period) => {
 
 export const getTopFarmers = async (period: Period) => {
   const dateFilter = getDateFilter(period);
-  let query = supabase.from("orders").select("farmer_id, total_amount, quantity, farmers(id, name)");
+  let query = supabase.from("orders").select("farmer_id, total_amount, quantity, farmers(id, name)").not("farmer_id", "is", null);
   if (dateFilter) query = query.gte("created_at", dateFilter);
 
   const { data } = await query;

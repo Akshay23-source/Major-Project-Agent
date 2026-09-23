@@ -19,6 +19,7 @@ import { getOrders } from '../../src/services/orders';
 import { getUnreadCount } from '../../src/services/notifications';
 import { useLocalization } from '../../src/hooks/useLocalization';
 import { supabase } from '../../src/lib/supabase';
+import { getMarketplaceMetrics, MarketplaceMetrics } from '../../src/services/integration/marketplaceOrders';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -43,6 +44,7 @@ export default function AgentDashboard() {
   const [activeLogistics, setActiveLogistics] = useState<any[]>([]);
   const [urgentOperations, setUrgentOperations] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [marketplace, setMarketplace] = useState<MarketplaceMetrics | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -86,7 +88,7 @@ export default function AgentDashboard() {
       // Fetch active logistics orders (PENDING, ASSIGNED, IN_TRANSIT)
       const { data: activeOrders } = await supabase
         .from("orders")
-        .select("id, external_order_id, product, quantity, unit, logistics_status, priority, is_perishable, buyers(name, city), farmers(name, village)")
+        .select("id, external_order_id, product, quantity, unit, logistics_status, priority, is_perishable, pickup_address, drop_address, buyers(name, city), farmers(name, village)")
         .in("logistics_status", ["PENDING", "PICKUP_ASSIGNED", "IN_TRANSIT", "OUT_FOR_DELIVERY"])
         .order("created_at", { ascending: false })
         .limit(10);
@@ -104,6 +106,14 @@ export default function AgentDashboard() {
       if (urgentOrders) setUrgentOperations(urgentOrders);
 
       setUnreadCount(count);
+
+      // Marketplace integration KPIs — isolated so a failure never blanks the dashboard
+      try {
+        setMarketplace(await getMarketplaceMetrics());
+      } catch (mErr) {
+        console.warn('Marketplace metrics unavailable:', mErr);
+        setMarketplace(null);
+      }
 
     } catch (e) {
       console.error(e);
@@ -150,6 +160,30 @@ export default function AgentDashboard() {
                 <SummaryCard title="Available Partners" value={kpis.availablePartners} icon="people" color={Colors.success} onPress={() => router.push('/delivery-partners')} />
               </View>
             </View>
+
+            {/* Farm Marketplace orders */}
+            {marketplace && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>Marketplace Orders</Text>
+                  <TouchableOpacity onPress={() => router.push('/marketplace' as any)}>
+                    <Text style={styles.seeAll}>Open</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.kpiGrid}>
+                  <SummaryCard title="New Orders" value={marketplace.newOrders} icon="storefront" color={Colors.primary} onPress={() => router.push('/marketplace?filter=PENDING' as any)} />
+                  <SummaryCard title="Assigned" value={marketplace.assigned} icon="person" color={Colors.info} onPress={() => router.push('/marketplace?filter=PICKUP_ASSIGNED' as any)} />
+                </View>
+                <View style={styles.kpiGrid}>
+                  <SummaryCard title="Awaiting Pickup" value={marketplace.awaitingPickup} icon="time" color={Colors.warning} onPress={() => router.push('/marketplace?filter=PICKUP_ASSIGNED' as any)} />
+                  <SummaryCard title="In Transit" value={marketplace.inTransit} icon="car" color={Colors.primaryDark} onPress={() => router.push('/marketplace?filter=IN_TRANSIT' as any)} />
+                </View>
+                <View style={styles.kpiGrid}>
+                  <SummaryCard title="Delivered" value={marketplace.delivered} icon="checkmark-done" color={Colors.success} onPress={() => router.push('/marketplace?filter=DELIVERED' as any)} />
+                  <SummaryCard title="Sync Failed" value={marketplace.syncFailed} icon="sync" color={marketplace.syncFailed > 0 ? Colors.error : Colors.textSecondary} onPress={() => router.push('/marketplace' as any)} />
+                </View>
+              </View>
+            )}
 
             {/* Live Operations Map Teaser */}
             <View style={styles.section}>
@@ -214,12 +248,12 @@ export default function AgentDashboard() {
                     <View style={styles.routeInfo}>
                       <View style={styles.routePoint}>
                         <Text style={styles.routeLabel}>Pickup</Text>
-                        <Text style={styles.routeValue}>{order.farmers?.village || 'Unknown'}</Text>
+                        <Text style={styles.routeValue} numberOfLines={1}>{order.farmers?.village || order.pickup_address || 'Unknown'}</Text>
                       </View>
                       <View style={styles.routeArrow}><Text>→</Text></View>
                       <View style={styles.routePoint}>
                         <Text style={styles.routeLabel}>Destination</Text>
-                        <Text style={styles.routeValue}>{order.buyers?.city || 'Unknown'}</Text>
+                        <Text style={styles.routeValue} numberOfLines={1}>{order.buyers?.city || order.drop_address?.city || 'Unknown'}</Text>
                       </View>
                     </View>
                   </TouchableOpacity>
