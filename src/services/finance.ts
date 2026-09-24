@@ -1,6 +1,10 @@
-import { supabase } from "../lib/supabase";
-import { Order } from "./orders";
-import { createNotification } from "./notifications";
+import { api } from "../lib/api";
+import { safe } from "./_safe";
+
+/**
+ * The agent's own finances for orders they book themselves.
+ * (Farm Marketplace payments and escrow are never stored in Agri Agent.)
+ */
 
 export interface Payment {
   id: string;
@@ -41,256 +45,46 @@ export interface FarmerSettlement {
   created_at: string;
 }
 
-export const initializeFinancialsForOrder = async (order: Order): Promise<boolean> => {
-  try {
-    // Create Payment (Buyer -> Agent)
-    const { error: paymentError } = await supabase.from("payments").insert({
-      order_id: order.id,
-      buyer_id: order.buyer_id,
-      amount: order.total_amount,
-      payment_method: "Cash", // Default, can be changed later
-      status: "Pending"
-    });
-    if (paymentError) throw paymentError;
+// Payment, commission and settlement records are created by the server when an order is booked.
 
-    // Create Commission (Agent earnings)
-    const commAmount = order.commission || 0;
-    const rate = (commAmount / (order.subtotal || 1)) * 100;
-    const { error: commError } = await supabase.from("commissions").insert({
-      order_id: order.id,
-      agent_id: order.agent_id,
-      rate: rate,
-      amount: commAmount,
-      status: "Pending"
-    });
-    if (commError) throw commError;
+export const getPayments = (): Promise<any[]> => safe(api.get<any[]>("/payments"), [], "fetching payments");
 
-    // Create Farmer Settlement (Agent -> Farmer)
-    const gross = (order.quantity * order.price);
-    const deductions = 0; // Configurable if needed
-    const net = gross - commAmount - deductions;
-    const { error: settleError } = await supabase.from("farmer_settlements").insert({
-      farmer_id: order.farmer_id,
-      order_id: order.id,
-      gross_amount: gross,
-      commission_deducted: commAmount,
-      other_deductions: deductions,
-      net_amount: net,
-      status: "Pending"
-    });
-    if (settleError) throw settleError;
+export const getPaymentById = (id: string): Promise<any | null> => safe(api.get<any>(`/payments/${id}`), null, "fetching payment");
 
-    return true;
-  } catch (error) {
-    console.error("Error initializing financials:", error);
-    return false;
-  }
-};
+export const getPaymentByOrderId = (orderId: string): Promise<any | null> =>
+  safe(api.get<any>(`/payments/by-order/${orderId}`), null, "fetching payment for order");
 
-export const getPayments = async (): Promise<any[]> => {
-  const { data, error } = await supabase
-    .from("payments")
-    .select("*, orders(order_number, product, buyers(name, phone))")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("Error fetching payments:", error);
-    return [];
-  }
-  return data || [];
-};
-
-export const getPaymentById = async (id: string): Promise<any | null> => {
-  const { data, error } = await supabase
-    .from("payments")
-    .select("*, orders(order_number, product, quantity, subtotal, delivery_charge, commission, total_amount, buyers(name, phone))")
-    .eq("id", id)
-    .single();
-
-  if (error) {
-    console.error("Error fetching payment:", error);
-    return null;
-  }
-  return data;
-};
-
-export const getPaymentByOrderId = async (orderId: string): Promise<any | null> => {
-  const { data, error } = await supabase
-    .from("payments")
-    .select("*")
-    .eq("order_id", orderId)
-    .maybeSingle();
-  
-  if (error) {
-    console.error("Error fetching payment for order:", error);
-    return null;
-  }
-  return data;
-};
-
-export const updatePaymentStatus = async (
-  id: string, 
-  status: Payment["status"], 
-  method?: string, 
+export const updatePaymentStatus = (
+  id: string,
+  status: Payment["status"],
+  method?: string,
   reference?: string,
   notes?: string
-): Promise<boolean> => {
-  const updateData: any = { status };
-  if (status === 'Completed') {
-    updateData.paid_at = new Date().toISOString();
-  }
-  if (method) updateData.payment_method = method;
-  if (reference) updateData.transaction_reference = reference;
-  if (notes !== undefined) updateData.notes = notes;
-
-  const { error } = await supabase.from("payments").update(updateData).eq("id", id);
-  
-  if (error) {
-    console.error("Error updating payment:", error);
-    return false;
-  }
-  
-  await createNotification(
-    "Payment Update",
-    `Payment ${status}`,
-    `A payment for order is now ${status}.`,
-    id,
-    "payment"
+): Promise<boolean> =>
+  safe(
+    api.patch(`/payments/${id}`, { status, payment_method: method, transaction_reference: reference, notes }).then(() => true),
+    false,
+    "updating payment"
   );
-  
-  return true;
-};
 
-export const getFarmerSettlements = async (): Promise<any[]> => {
-  const { data, error } = await supabase
-    .from("farmer_settlements")
-    .select("*, farmers(name, phone), orders(order_number, product)")
-    .order("created_at", { ascending: false });
+export const getFarmerSettlements = (): Promise<any[]> => safe(api.get<any[]>("/settlements"), [], "fetching settlements");
 
-  if (error) {
-    console.error("Error fetching settlements:", error);
-    return [];
-  }
-  return data || [];
-};
+export const getSettlementById = (id: string): Promise<any | null> => safe(api.get<any>(`/settlements/${id}`), null, "fetching settlement");
 
-export const getSettlementById = async (id: string): Promise<any | null> => {
-  const { data, error } = await supabase
-    .from("farmer_settlements")
-    .select(`
-      *,
-      orders ( order_number, total_amount, product, quantity, unit, price ),
-      farmers ( name, phone, village )
-    `)
-    .eq("id", id)
-    .single();
-    
-  if (error) {
-    console.error("Error fetching settlement:", error);
-    return null;
-  }
-  return data;
-};
+export const getSettlementByOrderId = (orderId: string): Promise<any | null> =>
+  safe(api.get<any>(`/settlements/by-order/${orderId}`), null, "fetching settlement by order id");
 
-export const getSettlementByOrderId = async (orderId: string): Promise<any | null> => {
-  const { data, error } = await supabase
-    .from("farmer_settlements")
-    .select("*")
-    .eq("order_id", orderId)
-    .maybeSingle();
-    
-  if (error) {
-    console.error("Error fetching settlement by order id:", error);
-    return null;
-  }
-  return data;
-};
-
-export const markSettlementAsPaid = async (
-  id: string,
-  method: string,
-  reference: string,
-  notes?: string
-): Promise<boolean> => {
-  const updateData: any = {
-    status: "Paid",
-    payment_method: method,
-    transaction_reference: reference,
-    paid_at: new Date().toISOString()
-  };
-  if (notes !== undefined) updateData.notes = notes;
-
-  const { error } = await supabase
-    .from("farmer_settlements")
-    .update(updateData)
-    .eq("id", id);
-    
-  if (error) {
-    console.error("Error paying settlement:", error);
-    return false;
-  }
-  
-  await createNotification(
-    "Settlement Paid",
-    "Settlement Completed",
-    `Farmer settlement has been marked as paid via ${method}.`,
-    id,
-    "settlement"
+export const markSettlementAsPaid = (id: string, method: string, reference: string, notes?: string): Promise<boolean> =>
+  safe(
+    api.post(`/settlements/${id}/pay`, { payment_method: method, transaction_reference: reference, notes }).then(() => true),
+    false,
+    "paying settlement"
   );
-  
-  return true;
-};
 
-export const getCommissions = async (): Promise<any[]> => {
-  const { data, error } = await supabase
-    .from("commissions")
-    .select("*, orders(order_number, product, total_amount)")
-    .order("created_at", { ascending: false });
-    
-  if (error) {
-    console.error("Error fetching commissions:", error);
-    return [];
-  }
-  return data || [];
-};
+export const getCommissions = (): Promise<any[]> => safe(api.get<any[]>("/commissions"), [], "fetching commissions");
 
-export const updateCommissionStatus = async (id: string, status: Commission["status"]): Promise<boolean> => {
-  const { error } = await supabase
-    .from("commissions")
-    .update({ status })
-    .eq("id", id);
-    
-  if (error) {
-    console.error("Error updating commission:", error);
-    return false;
-  }
-  return true;
-};
+export const updateCommissionStatus = (id: string, status: Commission["status"]): Promise<boolean> =>
+  safe(api.patch(`/commissions/${id}`, { status }).then(() => true), false, "updating commission");
 
-export const getFarmerFinancialStats = async (farmerId: string): Promise<any> => {
-  const { data, error } = await supabase
-    .from("farmer_settlements")
-    .select("net_amount, status")
-    .eq("farmer_id", farmerId);
-    
-  if (error) {
-    console.error("Error fetching farmer stats:", error);
-    return { totalSales: 0, totalPaid: 0, outstanding: 0 };
-  }
-  
-  let totalSales = 0;
-  let totalPaid = 0;
-  let outstanding = 0;
-  
-  (data || []).forEach((s: any) => {
-    const amt = parseFloat(s.net_amount) || 0;
-    totalSales += amt;
-    if (s.status === 'Paid') {
-      totalPaid += amt;
-    } else if (s.status === 'Pending') {
-      outstanding += amt;
-    }
-  });
-  
-  return { totalSales, totalPaid, outstanding };
-};
+export const getFarmerFinancialStats = (farmerId: string): Promise<any> =>
+  safe(api.get<any>(`/farmers/${farmerId}/financial-stats`), { totalSales: 0, totalPaid: 0, outstanding: 0 }, "fetching farmer stats");

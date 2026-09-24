@@ -16,13 +16,18 @@ import { changePassword } from "../../../src/services/agent";
 import { Colors } from "../../../src/theme/colors";
 
 export default function SecurityScreen() {
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
-    if (newPassword.length < 6) {
-      Alert.alert("Invalid Password", "Password must be at least 6 characters long.");
+    if (!currentPassword) {
+      Alert.alert("Current Password Required", "Enter your current password to confirm it's you.");
+      return;
+    }
+    if (newPassword.length < 8) {
+      Alert.alert("Invalid Password", "Password must be at least 8 characters long.");
       return;
     }
     
@@ -32,7 +37,7 @@ export default function SecurityScreen() {
     }
 
     setSaving(true);
-    const success = await changePassword(newPassword);
+    const success = await changePassword(newPassword, currentPassword);
     setSaving(false);
 
     if (success) {
@@ -40,7 +45,7 @@ export default function SecurityScreen() {
         { text: "OK", onPress: () => router.back() }
       ]);
     } else {
-      Alert.alert("Error", "Failed to update password. Please try again.");
+      Alert.alert("Error", "Failed to update password. Check your current password and try again.");
     }
   };
 
@@ -60,6 +65,21 @@ export default function SecurityScreen() {
           <Text style={styles.description}>
             Use a strong password that you aren't using for any other accounts.
           </Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Current Password *</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons name="key-outline" size={20} color={Colors.textSecondary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                secureTextEntry
+                placeholder="Enter current password"
+                placeholderTextColor={Colors.textSecondary}
+              />
+            </View>
+          </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>New Password *</Text>

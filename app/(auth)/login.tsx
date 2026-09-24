@@ -13,142 +13,53 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { supabase } from "../../src/lib/supabase";
-import * as Linking from "expo-linking";
-import { getCurrentAgent } from "../../src/services/agent";
-import { getCurrentDriver, linkDriverAccount } from "../../src/services/driver/auth";
+import { authApi, errorMessage } from "../../src/lib/api";
 
 export default function LoginScreen() {
-  const [activeTab, setActiveTab] = useState<'email' | 'mobile'>('email');
-  
-  // Email State
+  const [activeTab, setActiveTab] = useState<'email' | 'driver'>('email');
+
+  // Agent (email) state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  
-  // Mobile State
-  const [mobile, setMobile] = useState("");
-  const [otp, setOtp] = useState("");
-  const [isOtpSent, setIsOtpSent] = useState(false);
-  
+
+  // Driver (email) state
+  const [driverEmail, setDriverEmail] = useState("");
+  const [driverPassword, setDriverPassword] = useState("");
+
   const [loading, setLoading] = useState(false);
 
-  // --- EMAIL FLOW ---
+  // --- AGENT: EMAIL + PASSWORD ---
   const handleEmailLogin = async () => {
-    if (!email || !password) {
+    if (!email.trim() || !password) {
       Alert.alert("Error", "Please enter your email and password.");
       return;
     }
-
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-
-    if (error) {
-      if (error.message.includes('Email not confirmed')) {
-        Alert.alert(
-          "Email Not Confirmed",
-          "Please verify your email before logging in.",
-          [
-            { text: "Try Again", style: "cancel" },
-            { 
-              text: "Resend Email", 
-              onPress: async () => {
-                const { error: resendError } = await supabase.auth.resend({
-                  type: 'signup',
-                  email,
-                });
-                if (resendError) Alert.alert("Error", resendError.message);
-                else Alert.alert("Success", "Confirmation email resent. Check your inbox.");
-              }
-            }
-          ]
-        );
-      } else {
-        Alert.alert("Login Failed", error.message);
-      }
-    } else {
-      const isAgent = await getCurrentAgent();
-      if (isAgent) {
-        router.replace("/dashboard");
-      } else {
-        const isDriver = await getCurrentDriver();
-        if (isDriver) {
-          router.replace("/(driver)/dashboard");
-        } else {
-          Alert.alert("Access Denied", "Your account is not registered as an Agent or Driver.");
-        }
-      }
-    }
-  };
-
-  // --- MOBILE FLOW ---
-  const handleSendOtp = async () => {
-    if (mobile.length !== 10) {
-      Alert.alert("Invalid Mobile", "Please enter a valid 10-digit mobile number.");
-      return;
-    }
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({
-      phone: `+91${mobile}`
-    });
-    setLoading(false);
-    
-    if (error) {
-      Alert.alert("Error", error.message);
-    } else {
-      setIsOtpSent(true);
-      Alert.alert("OTP Sent", "Please check your messages.");
-    }
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!otp || otp.length < 6) {
-      Alert.alert("Invalid OTP", "Please enter the 6-digit OTP.");
-      return;
-    }
-    setLoading(true);
-    const { error } = await supabase.auth.verifyOtp({
-      phone: `+91${mobile}`,
-      token: otp,
-      type: 'sms'
-    });
-    setLoading(false);
-    
-    if (error) {
-      Alert.alert("Verification Failed", error.message);
-    } else {
-      const isAgent = await getCurrentAgent();
-      if (isAgent) {
-        router.replace("/dashboard");
-      } else {
-        // Try linking the mobile number as a driver account first
-        await linkDriverAccount(`+91${mobile}`);
-        
-        const isDriver = await getCurrentDriver();
-        if (isDriver) {
-          router.replace("/(driver)/dashboard");
-        } else {
-          Alert.alert("Access Denied", "No driver profile found for this number.");
-        }
-      }
-    }
-  };
-
-  // --- OAUTH FLOW ---
-  const handleOAuth = async (provider: 'google' | 'facebook') => {
     try {
-      const redirectUri = Linking.createURL('/');
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: redirectUri,
-          skipBrowserRedirect: false,
-        },
-      });
-      if (error) throw error;
-    } catch (err: any) {
-      Alert.alert(`${provider === 'google' ? 'Google' : 'Facebook'} sign-in could not be completed.`, err.message);
+      await authApi.agentLogin(email.trim(), password);
+      router.replace("/dashboard");
+    } catch (e) {
+      Alert.alert("Login Failed", errorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- DRIVER: EMAIL + PASSWORD ---
+  const handleDriverLogin = async () => {
+    if (!driverEmail.trim() || !driverPassword) {
+      Alert.alert("Error", "Please enter your email and password.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await authApi.driverLogin(driverEmail.trim(), driverPassword);
+      router.replace("/(driver)/dashboard");
+    } catch (e) {
+      Alert.alert("Login Failed", errorMessage(e));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -169,15 +80,15 @@ export default function LoginScreen() {
               onPress={() => setActiveTab('email')}
               activeOpacity={0.8}
             >
-              <Text style={[styles.tabText, activeTab === 'email' && styles.activeTabText]}>Email</Text>
+              <Text style={[styles.tabText, activeTab === 'email' && styles.activeTabText]}>Agent</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
-              style={[styles.tab, activeTab === 'mobile' && styles.activeTab]} 
-              onPress={() => { setActiveTab('mobile'); setIsOtpSent(false); }}
+              style={[styles.tab, activeTab === 'driver' && styles.activeTab]} 
+              onPress={() => setActiveTab('driver')}
               activeOpacity={0.8}
             >
-              <Text style={[styles.tabText, activeTab === 'mobile' && styles.activeTabText]}>Mobile</Text>
+              <Text style={[styles.tabText, activeTab === 'driver' && styles.activeTabText]}>Driver</Text>
             </TouchableOpacity>
           </View>
 
@@ -217,10 +128,6 @@ export default function LoginScreen() {
                   </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity style={styles.forgotButton} onPress={() => router.push("/forgot-password")}>
-                  <Text style={styles.forgotText}>Forgot Password?</Text>
-                </TouchableOpacity>
-
                 <TouchableOpacity
                   style={[styles.primaryButton, loading && { opacity: 0.7 }]}
                   onPress={handleEmailLogin}
@@ -231,80 +138,48 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </>
             ) : (
-              // MOBILE FORM
+              // DRIVER EMAIL FORM
               <>
-                <Text style={styles.label}>Mobile Number</Text>
-                <View style={styles.mobileInputRow}>
-                  <View style={styles.countryCode}>
-                    <Text style={styles.countryCodeText}>+91</Text>
-                    <Ionicons name="chevron-down" size={14} color="#6B7280" />
-                  </View>
+                <Text style={styles.label}>Email Address</Text>
+                <View style={styles.inputContainer}>
                   <TextInput
-                    style={styles.mobileInput}
-                    placeholder="Enter mobile number"
+                    style={styles.input}
+                    placeholder="Enter your email"
                     placeholderTextColor="#9CA3AF"
-                    keyboardType="phone-pad"
-                    maxLength={10}
-                    value={mobile}
-                    onChangeText={(text) => setMobile(text.replace(/[^0-9]/g, ""))}
+                    value={driverEmail}
+                    onChangeText={setDriverEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
                   />
                 </View>
 
-                {isOtpSent && (
-                  <>
-                    <Text style={styles.label}>OTP Code</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Enter 6-digit OTP"
-                        placeholderTextColor="#9CA3AF"
-                        keyboardType="number-pad"
-                        maxLength={6}
-                        value={otp}
-                        onChangeText={setOtp}
-                      />
-                    </View>
-                  </>
-                )}
+                <Text style={styles.label}>Password</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your password"
+                    placeholderTextColor="#9CA3AF"
+                    value={driverPassword}
+                    onChangeText={setDriverPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                    <Ionicons name={showPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
 
                 <TouchableOpacity
-                  style={[styles.primaryButton, loading && { opacity: 0.7 }, { marginTop: isOtpSent ? 16 : 28 }]}
-                  onPress={isOtpSent ? handleVerifyOtp : handleSendOtp}
+                  style={[styles.primaryButton, loading && { opacity: 0.7 }]}
+                  onPress={handleDriverLogin}
                   disabled={loading}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.primaryButtonText}>
-                    {loading ? "Please wait..." : (isOtpSent ? "Verify & Login" : "Send OTP")}
-                  </Text>
+                  <Text style={styles.primaryButtonText}>{loading ? "Authenticating..." : "Login"}</Text>
                 </TouchableOpacity>
               </>
             )}
-
-            {/* OAUTH & FOOTER (Shared) */}
-            <View style={styles.dividerContainer}>
-              <View style={styles.divider} />
-              <Text style={styles.orText}>or continue with</Text>
-              <View style={styles.divider} />
-            </View>
-
-            <View style={styles.socialRow}>
-              <TouchableOpacity style={styles.socialButton} onPress={() => handleOAuth('google')}>
-                <Ionicons name="logo-google" size={20} color="#DB4437" />
-                <Text style={styles.socialText}>Google</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.socialButton} onPress={() => handleOAuth('facebook')}>
-                <Ionicons name="logo-facebook" size={20} color="#4267B2" />
-                <Text style={styles.socialText}>Facebook</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.signupContainer}>
-              <Text style={styles.signupText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={() => router.push("/signup")}>
-                <Text style={styles.signupLink}>Sign up</Text>
-              </TouchableOpacity>
-            </View>
 
           </View>
         </ScrollView>

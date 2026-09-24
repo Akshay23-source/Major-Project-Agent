@@ -5,7 +5,7 @@ import { Colors } from '../../theme/colors';
 import { useSidebar } from '../../providers/SidebarProvider';
 import { useRouter, useSegments } from 'expo-router';
 import { useAuth } from '../../providers/AuthProvider';
-import { supabase } from '../../lib/supabase';
+import { signOut } from '../../lib/api';
 import { useLocalization } from '../../hooks/useLocalization';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -56,7 +56,7 @@ export const Sidebar = () => {
 
   const handleLogout = async () => {
     if (IS_MOBILE) closeSidebar();
-    await supabase.auth.signOut();
+    await signOut();
   };
 
   const currentRoute = '/' + segments.join('/');
@@ -108,7 +108,7 @@ export const Sidebar = () => {
         <View style={styles.profileInfo}>
           <Ionicons name="person-circle" size={40} color={Colors.surface} />
           <View style={styles.profileTexts}>
-            <Text style={styles.profileName}>{user?.email?.split('@')[0] || 'Agent User'}</Text>
+            <Text style={styles.profileName}>{user?.name || user?.email?.split('@')[0] || 'Agent User'}</Text>
             <Text style={styles.profileRole}>Field Agent</Text>
           </View>
         </View>

@@ -4,10 +4,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../../src/theme/colors';
 import { getOrderById } from '../../../../src/services/orders';
-import { getAvailablePartners, getAvailableVehicles, assignDelivery, assignVehicle, createPickup, createDelivery, Vehicle, DeliveryPartner } from '../../../../src/services/logistics';
+import { getAvailablePartners, getAvailableVehicles, dispatchOrder, Vehicle, DeliveryPartner } from '../../../../src/services/logistics';
 import { AppHeader } from '../../../../src/components/ui/AppHeader';
 import { StatusBadge } from '../../../../src/components/ui/StatusBadge';
-import { kickMarketplaceSync } from '../../../../src/services/integration/marketplaceSync';
+import { errorMessage } from '../../../../src/lib/api';
 
 export default function LogisticsWorkspaceScreen() {
   const { id } = useLocalSearchParams();
@@ -60,34 +60,19 @@ export default function LogisticsWorkspaceScreen() {
 
     setSubmitting(true);
     try {
-      // Create delivery record
-      const delivery = await createDelivery({
-        order_id: order.id,
+      // One server call: creates the delivery, assigns driver + vehicle, records the
+      // pickup and timeline, and notifies the Farm Marketplace for marketplace orders.
+      await dispatchOrder(order.id, {
         delivery_partner_id: selectedPartner,
         vehicle_id: selectedVehicle,
-        pickup_location: order.pickup_address || order.farmers?.location || 'Unknown',
-        drop_location: order.delivery_location || 'Unknown'
+        pickup_location: order.pickup_address || order.farmers?.location || order.farmers?.village || 'Unknown',
+        drop_location: order.delivery_location || 'Unknown',
       });
-
-      // Assign the vehicle and partner (updates delivery and audits)
-      await assignDelivery(delivery.id, selectedPartner);
-      await assignVehicle(delivery.id, selectedVehicle);
-
-      // Create Pickup
-      await createPickup({
-        order_id: order.id,
-        farmer_id: order.farmer_id,
-        delivery_partner_id: selectedPartner,
-        vehicle_id: selectedVehicle
-      });
-
-      // Assignment events are queued for the Farm Marketplace by DB triggers
-      kickMarketplaceSync();
 
       Alert.alert("Success", "Dispatch complete! Driver and vehicle assigned.");
       router.back();
     } catch (error: any) {
-      Alert.alert("Dispatch Error", error.message || "Failed to dispatch.");
+      Alert.alert("Dispatch Error", errorMessage(error, "Failed to dispatch."));
     } finally {
       setSubmitting(false);
     }

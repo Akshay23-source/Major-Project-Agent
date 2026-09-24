@@ -69,7 +69,7 @@ export default function AddFarmerScreen() {
       const createdFarmer = await createFarmer(newFarmerData);
       
       if (!createdFarmer) {
-        Alert.alert("Error", "Failed to save farmer data to Supabase.");
+        Alert.alert("Error", "Failed to save farmer data. Please try again.");
         return;
       }
 

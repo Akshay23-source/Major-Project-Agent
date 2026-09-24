@@ -15,11 +15,10 @@ import { Colors } from '../../src/theme/colors';
 import { AppHeader } from '../../src/components/ui/AppHeader';
 import { SummaryCard } from '../../src/components/ui/SummaryCard';
 import { StatusBadge } from '../../src/components/ui/StatusBadge';
-import { getOrders } from '../../src/services/orders';
 import { getUnreadCount } from '../../src/services/notifications';
 import { useLocalization } from '../../src/hooks/useLocalization';
-import { supabase } from '../../src/lib/supabase';
 import { getMarketplaceMetrics, MarketplaceMetrics } from '../../src/services/integration/marketplaceOrders';
+import { getLogisticsDashboard } from '../../src/services/logistics';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -55,56 +54,20 @@ export default function AgentDashboard() {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      const [count] = await Promise.all([
-        getUnreadCount()
-      ]);
-
-      // Fetch real KPI counts
-      const [
-        { count: incomingOrdersCount },
-        { count: awaitingPickupCount },
-        { count: inTransitCount },
-        { count: outForDeliveryCount },
-        { count: availablePartnersCount }
-      ] = await Promise.all([
-        supabase.from("orders").select("*", { count: "exact", head: true }).in("logistics_status", ["PENDING", "PICKUP_ASSIGNED"]),
-        supabase.from("deliveries").select("*", { count: "exact", head: true }).eq("status", "AWAITING_PICKUP"),
-        supabase.from("deliveries").select("*", { count: "exact", head: true }).eq("status", "IN_TRANSIT"),
-        supabase.from("deliveries").select("*", { count: "exact", head: true }).eq("status", "OUT_FOR_DELIVERY"),
-        supabase.from("delivery_partners").select("*", { count: "exact", head: true }).in("status", ["AVAILABLE", "ONLINE"])
-      ]);
+      const [count, dashboard] = await Promise.all([getUnreadCount(), getLogisticsDashboard()]);
 
       setKpis({
-        incomingOrders: incomingOrdersCount || 0,
-        awaitingPickup: awaitingPickupCount || 0,
-        pickupsToday: 0, // Requires date filtering, keeping 0 for simplicity if 0.
-        inTransit: inTransitCount || 0,
-        outForDelivery: outForDeliveryCount || 0,
-        deliveredToday: 0,
-        delayed: 0,
-        availablePartners: availablePartnersCount || 0
+        incomingOrders: dashboard.kpis.incomingOrders || 0,
+        awaitingPickup: dashboard.kpis.awaitingPickup || 0,
+        pickupsToday: dashboard.kpis.pickupsToday || 0,
+        inTransit: dashboard.kpis.inTransit || 0,
+        outForDelivery: dashboard.kpis.outForDelivery || 0,
+        deliveredToday: dashboard.kpis.deliveredToday || 0,
+        delayed: dashboard.kpis.delayed || 0,
+        availablePartners: dashboard.kpis.availablePartners || 0,
       });
-
-      // Fetch active logistics orders (PENDING, ASSIGNED, IN_TRANSIT)
-      const { data: activeOrders } = await supabase
-        .from("orders")
-        .select("id, external_order_id, product, quantity, unit, logistics_status, priority, is_perishable, pickup_address, drop_address, buyers(name, city), farmers(name, village)")
-        .in("logistics_status", ["PENDING", "PICKUP_ASSIGNED", "IN_TRANSIT", "OUT_FOR_DELIVERY"])
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      if (activeOrders) setActiveLogistics(activeOrders);
-
-      // Fetch Urgent Operations (Delayed, Failed, High Priority)
-      const { data: urgentOrders } = await supabase
-        .from("orders")
-        .select("id, external_order_id, product, logistics_status, priority")
-        .or("priority.eq.URGENT,logistics_status.eq.DELAYED,logistics_status.eq.FAILED")
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      if (urgentOrders) setUrgentOperations(urgentOrders);
-
+      setActiveLogistics(dashboard.activeOrders || []);
+      setUrgentOperations(dashboard.urgentOrders || []);
       setUnreadCount(count);
 
       // Marketplace integration KPIs — isolated so a failure never blanks the dashboard
@@ -114,7 +77,6 @@ export default function AgentDashboard() {
         console.warn('Marketplace metrics unavailable:', mErr);
         setMarketplace(null);
       }
-
     } catch (e) {
       console.error(e);
     } finally {

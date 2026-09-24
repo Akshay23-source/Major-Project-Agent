@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { supabase } from '../../../src/lib/supabase';
+import { getOrdersWithoutDelivery } from '../../../src/services/orders';
 import { createDelivery } from '../../../src/services/deliveries';
 import { Colors } from '../../../src/theme/colors';
 
@@ -34,17 +34,8 @@ export default function AddDeliveryScreen() {
   const loadOrders = async () => {
     setLoading(true);
     try {
-      // Fetch orders that don't have a delivery
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*, deliveries(id), farmers(name, village), buyers(name, location)')
-        .neq('status', 'Cancelled')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      
-      const ordersWithoutDelivery = (data || []).filter(o => !o.deliveries || o.deliveries.length === 0);
-      setOrders(ordersWithoutDelivery);
+      // Orders (not cancelled) that don't have a delivery yet
+      setOrders(await getOrdersWithoutDelivery());
     } catch (e) {
       console.error(e);
       Alert.alert("Error", "Failed to load orders");

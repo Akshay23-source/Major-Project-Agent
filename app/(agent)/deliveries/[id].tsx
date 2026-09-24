@@ -13,10 +13,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Colors } from '../../../src/theme/colors';
 import { StatusBadge } from '../../../src/components/ui/StatusBadge';
-import { supabase } from '../../../src/lib/supabase';
-import { getDeliveryPartners } from '../../../src/services/logistics';
-import { getCurrentAgent } from '../../../src/services/agent';
-import { kickMarketplaceSync } from '../../../src/services/integration/marketplaceSync';
+import { dispatchOrder, getDeliveryPartners, getDispatchView, setOrderLogisticsStatus } from '../../../src/services/logistics';
+import { errorMessage } from '../../../src/lib/api';
 
 export default function DispatchScreen() {
   const router = useRouter();
@@ -32,33 +30,10 @@ export default function DispatchScreen() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Fetch Order and joined data
-      const { data: orderData, error: orderErr } = await supabase
-        .from('orders')
-        .select('*, buyers(*), farmers(*)')
-        .eq('id', id)
-        .single();
-      
-      if (orderErr) throw orderErr;
+      // Order (with farmer/buyer), its latest delivery and that delivery's timeline
+      const { order: orderData, events: eventData } = await getDispatchView(id as string);
       setOrder(orderData);
-
-      // 2. Fetch Events for timeline
-      // Find delivery first if it exists
-      const { data: deliveries } = await supabase
-        .from('deliveries')
-        .select('id, status, delivery_partner_id')
-        .eq('order_id', id);
-        
-      if (deliveries && deliveries.length > 0) {
-        const deliveryId = deliveries[0].id;
-        const { data: eventData } = await supabase
-          .from('delivery_events')
-          .select('*')
-          .eq('delivery_id', deliveryId)
-          .order('created_at', { ascending: true });
-        
-        if (eventData) setEvents(eventData);
-      }
+      setEvents(eventData || []);
 
       // 3. Fetch partners for assignment if status is PENDING
       if (orderData.logistics_status === 'PENDING') {
@@ -81,36 +56,14 @@ export default function DispatchScreen() {
   const handleUpdateStatus = async (newStatus: string) => {
     setUpdating(true);
     try {
-      // Update order logistics_status
-      const { error: ordErr } = await supabase
-        .from('orders')
-        .update({ logistics_status: newStatus })
-        .eq('id', id);
-        
-      if (ordErr) throw ordErr;
-
-      // Update deliveries status & add event
-      const { data: deliveries } = await supabase.from('deliveries').select('id').eq('order_id', id);
-      if (deliveries && deliveries.length > 0) {
-        const deliveryId = deliveries[0].id;
-        await supabase.from('deliveries').update({ status: newStatus }).eq('id', deliveryId);
-        // agent_id is required by the "Agents can insert delivery events" RLS policy
-        const agent = await getCurrentAgent();
-        const { error: evtErr } = await supabase.from('delivery_events').insert({
-          delivery_id: deliveryId,
-          agent_id: agent?.id,
-          event_type: newStatus,
-          description: `Status updated to ${newStatus} by Agent`
-        });
-        if (evtErr) console.error('Failed to record delivery event:', evtErr.message);
-      }
-
-      kickMarketplaceSync();
+      // Server updates the order + delivery, records the timeline event and
+      // notifies the Farm Marketplace for marketplace orders.
+      await setOrderLogisticsStatus(id as string, newStatus);
 
       Alert.alert("Success", `Status updated to ${newStatus}.`);
       loadData();
     } catch (e) {
-      Alert.alert("Error", "Failed to update status.");
+      Alert.alert("Error", errorMessage(e, "Failed to update status."));
     } finally {
       setUpdating(false);
     }
@@ -123,41 +76,19 @@ export default function DispatchScreen() {
     }
     setUpdating(true);
     try {
-      // 1. Create a delivery record if it doesn't exist
-      const { data: delivery, error: delErr } = await supabase
-        .from('deliveries')
-        .insert({
-          order_id: id,
-          delivery_partner_id: selectedPartnerId,
-          status: 'PICKUP_ASSIGNED',
-          delivery_number: `DEL-${Date.now().toString().substring(7)}`,
-          pickup_location: order.pickup_address || order.farmers?.village || 'Farm',
-          drop_location: order.delivery_location || order.buyers?.city || 'City'
-        })
-        .select('id')
-        .single();
-      
-      if (delErr) throw delErr;
-
-      // 2. Update order logistics status
-      await supabase.from('orders').update({ logistics_status: 'PICKUP_ASSIGNED' }).eq('id', id);
-
-      // 3. Add Event (agent_id is required by the delivery_events insert RLS policy)
-      const agent = await getCurrentAgent();
-      const { error: evtErr } = await supabase.from('delivery_events').insert({
-        delivery_id: delivery.id,
-        agent_id: agent?.id,
-        event_type: 'ASSIGNED',
-        description: `Driver Assigned for Pickup`
+      // One call: creates the delivery, assigns the driver, records the timeline
+      // and notifies the Farm Marketplace for marketplace orders.
+      await dispatchOrder(id as string, {
+        delivery_partner_id: selectedPartnerId,
+        pickup_location: order.pickup_address || order.farmers?.village || 'Farm',
+        drop_location: order.delivery_location || order.buyers?.city || 'City',
       });
-      if (evtErr) console.error('Failed to record delivery event:', evtErr.message);
-      kickMarketplaceSync();
 
       Alert.alert("Success", "Driver assigned successfully.");
       loadData();
     } catch (e) {
       console.error(e);
-      Alert.alert("Error", "Failed to assign partner.");
+      Alert.alert("Error", errorMessage(e, "Failed to assign partner."));
     } finally {
       setUpdating(false);
     }

@@ -16,6 +16,7 @@ import { getCurrentDriver, updateDriverStatus, DeliveryPartner } from "../../src
 import { getMyDeliveries } from "../../src/services/driver/deliveries";
 import { startLocationTracking, stopLocationTracking } from "../../src/services/driver/locationTracking";
 import { useLocalization } from "../../src/hooks/useLocalization";
+import { signOut } from "../../src/lib/api";
 
 export default function DriverDashboard() {
   const router = useRouter();
@@ -74,6 +75,21 @@ export default function DriverDashboard() {
     }
   };
 
+  const handleLogout = () => {
+    Alert.alert("Log out", "Stop sharing your location and sign out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log out",
+        style: "destructive",
+        onPress: async () => {
+          await stopLocationTracking();
+          await updateDriverStatus("OFFLINE");
+          await signOut(); // AuthProvider returns to the login screen
+        },
+      },
+    ]);
+  };
+
   const toggleStatus = async () => {
     if (!driver) return;
     const newStatus = driver.status === 'ONLINE' ? 'OFFLINE' : 'ONLINE';
@@ -101,6 +117,10 @@ export default function DriverDashboard() {
         <View>
           <Text style={styles.greeting}>{t('dashboard.welcome')},</Text>
           <Text style={styles.name}>{driver?.name}</Text>
+          <TouchableOpacity onPress={handleLogout} accessibilityLabel="Log out" style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+            <Ionicons name="log-out-outline" size={16} color={Colors.textSecondary} />
+            <Text style={{ color: Colors.textSecondary, marginLeft: 4, fontSize: 13 }}>Log out</Text>
+          </TouchableOpacity>
         </View>
         <TouchableOpacity 
           style={[styles.statusToggle, driver?.status === 'ONLINE' ? styles.statusOnline : styles.statusOffline]}

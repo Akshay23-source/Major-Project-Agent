@@ -1,7 +1,7 @@
 import { AudioModule, requestRecordingPermissionsAsync, setAudioModeAsync, RecordingPresets } from 'expo-audio';
 import { STTProvider } from './VoiceProvider';
 import * as FileSystem from 'expo-file-system/legacy';
-import { supabase } from '../../lib/supabase';
+import { api } from '../../lib/api';
 
 class ExpoAudioSTTService implements STTProvider {
   isListening: boolean = false;
@@ -73,13 +73,12 @@ class ExpoAudioSTTService implements STTProvider {
         encoding: 'base64',
       });
 
-      // Securely invoke the edge function, which has the Sarvam API key server-side
-      const { data, error } = await supabase.functions.invoke('agri-ai', {
-        body: { audioData: base64Audio }
-      });
-
-      if (error) {
-        console.error("Edge Function STT Error:", error.message);
+      // The Agri Agent backend holds the Sarvam API key server-side
+      let data: { transcription?: string };
+      try {
+        data = await api.post<{ transcription?: string }>('/ai/transcribe', { audioData: base64Audio });
+      } catch (err: any) {
+        console.error("STT Error:", err?.message);
         throw new Error("Voice service is temporarily unavailable. Please try again.");
       }
 

@@ -13,7 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import { Agent, getCurrentAgent, updateCurrentAgent } from "../../src/services/agent";
-import { supabase } from "../../src/lib/supabase";
+import { signOut } from "../../src/lib/api";
 import { Colors } from "../../src/theme/colors";
 
 export default function SettingsScreen() {
@@ -63,7 +63,7 @@ export default function SettingsScreen() {
         text: "Logout", 
         style: "destructive", 
         onPress: async () => {
-          await supabase.auth.signOut();
+          await signOut();
           // AuthProvider handles navigation to login
         }
       }

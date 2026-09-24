@@ -1,7 +1,6 @@
-import { supabase } from '../lib/supabase';
-import { getCurrentAgent } from './agent';
+import { api } from '../lib/api';
 
-export type DeliveryStatus = 
+export type DeliveryStatus =
   | 'ORDER_RECEIVED'
   | 'ORDER_CONFIRMED'
   | 'AWAITING_PICKUP'
@@ -23,6 +22,7 @@ export interface DeliveryPartner {
   phone: string;
   vehicle_type?: string;
   vehicle_number?: string;
+  license_number?: string;
   status: PartnerStatus;
   rating: number;
   completed_deliveries: number;
@@ -42,7 +42,7 @@ export interface Vehicle {
 export interface Pickup {
   id: string;
   order_id: string;
-  farmer_id: string;
+  farmer_id?: string;
   delivery_partner_id?: string;
   vehicle_id?: string;
   status: string;
@@ -64,160 +64,74 @@ export interface Delivery {
   logistics_tracking_status: string;
 }
 
-export const getDeliveryPartners = async (): Promise<DeliveryPartner[]> => {
-  const agent = await getCurrentAgent();
-  if (!agent) throw new Error("Not authenticated");
+// ── Delivery partners (drivers) ──────────────
+export const getDeliveryPartners = () => api.get<DeliveryPartner[]>('/drivers');
 
-  const { data, error } = await supabase
-    .from('delivery_partners')
-    .select('*')
-    .eq('agent_id', agent.id)
-    .order('name');
+export const getAvailablePartners = () => api.get<DeliveryPartner[]>('/drivers', { status: 'ONLINE,AVAILABLE' });
 
-  if (error) throw error;
-  return data || [];
-};
+export const createDeliveryPartner = (data: {
+  name: string;
+  phone: string;
+  vehicle_type?: string;
+  vehicle_number?: string;
+  license_number?: string;
+}) => api.post<DeliveryPartner>('/drivers', data);
 
-export const getAvailablePartners = async (): Promise<DeliveryPartner[]> => {
-  const agent = await getCurrentAgent();
-  if (!agent) throw new Error("Not authenticated");
+export const updateDeliveryPartner = (id: string, data: Partial<DeliveryPartner>) => api.patch<DeliveryPartner>(`/drivers/${id}`, data);
 
-  const { data, error } = await supabase
-    .from('delivery_partners')
-    .select('*')
-    .eq('agent_id', agent.id)
-    .in('status', ['ONLINE', 'AVAILABLE'])
-    .order('rating', { ascending: false });
+// ── Vehicles ─────────────────────────────────
+export const getVehicles = () => api.get<Vehicle[]>('/vehicles');
 
-  if (error) throw error;
-  return data || [];
-};
+export const getAvailableVehicles = () => api.get<Vehicle[]>('/vehicles', { availability_status: 'AVAILABLE' });
 
+export const createVehicle = (data: { vehicle_number: string; vehicle_type: string; capacity?: number; capacity_unit?: string }) =>
+  api.post<Vehicle>('/vehicles', data);
+
+export const updateVehicle = (id: string, data: Partial<Vehicle>) => api.patch<Vehicle>(`/vehicles/${id}`, data);
+
+// ── Dispatch ─────────────────────────────────
+/**
+ * One call: creates the delivery, assigns the driver (+ vehicle), records the
+ * timeline and — for marketplace orders — notifies the Farm Marketplace.
+ */
+export const dispatchOrder = (
+  orderId: string,
+  data: { delivery_partner_id: string; vehicle_id?: string | null; pickup_location?: string; drop_location?: string; eta?: string; notes?: string }
+) => api.post<Delivery>(`/logistics/orders/${orderId}/dispatch`, data);
+
+/** Order + latest delivery + its timeline (dispatch screen). */
+export const getDispatchView = (orderId: string) => api.get<{ order: any; delivery: any | null; events: any[] }>(`/logistics/orders/${orderId}`);
+
+/** Agent sets the logistics status of an order (dispatch screen buttons). */
+export const setOrderLogisticsStatus = (orderId: string, status: DeliveryStatus | string, reason?: string) =>
+  api.post(`/logistics/orders/${orderId}/status`, { status, reason });
+
+export const getLogisticsDashboard = () =>
+  api.get<{ kpis: Record<string, number>; activeOrders: any[]; urgentOrders: any[] }>('/logistics/dashboard');
+
+// ── Single-step helpers ──────────────────────
 export const assignDelivery = async (deliveryId: string, partnerId: string): Promise<void> => {
-  const agent = await getCurrentAgent();
-  if (!agent) throw new Error("Not authenticated");
-
-  const { error } = await supabase
-    .from('deliveries')
-    .update({ 
-      delivery_partner_id: partnerId,
-      status: 'PICKUP_ASSIGNED' 
-    })
-    .eq('id', deliveryId);
-
-  if (error) throw error;
-
-  // Record audit event
-  await recordDeliveryEvent(deliveryId, 'ASSIGNED', `Assigned to partner ${partnerId}`);
+  await api.post(`/deliveries/${deliveryId}/partner`, { delivery_partner_id: partnerId });
 };
 
 export const recordDeliveryEvent = async (deliveryId: string, eventType: string, description?: string, lat?: number, lon?: number): Promise<void> => {
-  const agent = await getCurrentAgent();
-  if (!agent) return; // Silent return for now if no agent context
-
-  const { error } = await supabase
-    .from('delivery_events')
-    .insert({
-      delivery_id: deliveryId,
-      agent_id: agent.id,
-      event_type: eventType,
-      description: description || '',
-      latitude: lat,
-      longitude: lon
-    });
-
-  if (error) console.error('Failed to record delivery event:', error);
+  try {
+    await api.post(`/deliveries/${deliveryId}/events`, { event_type: eventType, description, latitude: lat, longitude: lon });
+  } catch (error) {
+    console.error('Failed to record delivery event:', error);
+  }
 };
 
 export const updateDeliveryStatus = async (deliveryId: string, status: DeliveryStatus): Promise<void> => {
-  const { error } = await supabase
-    .from('deliveries')
-    .update({ status })
-    .eq('id', deliveryId);
-
-  if (error) throw error;
-
-  await recordDeliveryEvent(deliveryId, status, `Status changed to ${status}`);
-};
-
-export const getAvailableVehicles = async (): Promise<Vehicle[]> => {
-  const agent = await getCurrentAgent();
-  if (!agent) throw new Error("Not authenticated");
-
-  const { data, error } = await supabase
-    .from('vehicles')
-    .select('*')
-    .eq('agent_id', agent.id)
-    .eq('availability_status', 'AVAILABLE')
-    .order('vehicle_number');
-
-  if (error) throw error;
-  return data || [];
+  await api.post(`/deliveries/${deliveryId}/status`, { status });
 };
 
 export const assignVehicle = async (deliveryId: string, vehicleId: string): Promise<void> => {
-  const agent = await getCurrentAgent();
-  if (!agent) throw new Error("Not authenticated");
-
-  const { error } = await supabase
-    .from('deliveries')
-    .update({ 
-      vehicle_id: vehicleId 
-    })
-    .eq('id', deliveryId);
-
-  if (error) throw error;
-
-  // Also update vehicle status
-  await supabase.from('vehicles').update({ availability_status: 'ASSIGNED' }).eq('id', vehicleId);
-
-  await recordDeliveryEvent(deliveryId, 'VEHICLE_ASSIGNED', `Assigned vehicle ${vehicleId}`);
+  await api.post(`/deliveries/${deliveryId}/vehicle`, { vehicle_id: vehicleId });
 };
 
-export const createPickup = async (pickupData: Partial<Pickup>): Promise<Pickup> => {
-  const { data, error } = await supabase
-    .from('pickups')
-    .insert({
-      ...pickupData,
-      status: 'ASSIGNED'
-    })
-    .select()
-    .single();
+export const createPickup = (pickupData: Partial<Pickup>) => api.post<Pickup>('/pickups', pickupData);
 
-  if (error) throw error;
-  
-  if (data.delivery_partner_id) {
-    await supabase.from('delivery_partners').update({ status: 'BUSY' }).eq('id', data.delivery_partner_id);
-  }
+export const createDelivery = (deliveryData: Partial<Delivery>) => api.post<Delivery>('/deliveries', deliveryData);
 
-  return data;
-};
-
-export const createDelivery = async (deliveryData: Partial<Delivery>): Promise<Delivery> => {
-  const { data, error } = await supabase
-    .from('deliveries')
-    .insert({
-      ...deliveryData,
-      // deliveries.delivery_number is NOT NULL; without it this insert always failed
-      delivery_number: deliveryData.delivery_number || `DLV-${Date.now().toString(36).toUpperCase()}`,
-      status: 'AWAITING_PICKUP',
-      logistics_tracking_status: 'ASSIGNED'
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
-};
-
-export const getDeliveryTimeline = async (deliveryId: string): Promise<any[]> => {
-  const { data, error } = await supabase
-    .from('delivery_events')
-    .select('*')
-    .eq('delivery_id', deliveryId)
-    .order('created_at', { ascending: true });
-
-  if (error) throw error;
-  return data || [];
-};
-
+export const getDeliveryTimeline = (deliveryId: string) => api.get<any[]>(`/deliveries/${deliveryId}/events`);

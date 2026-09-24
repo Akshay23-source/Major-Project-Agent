@@ -1,114 +1,100 @@
 # Agri Agent 🌾
 
-Agri Agent is a robust, production-ready React Native application tailored for agricultural agents to seamlessly manage farmers, orders, and operations in the field. Built with Expo, Supabase, and AI integrations.
+Agri Agent is a React Native (Expo) app for agricultural agents and their delivery partners:
+it manages marketplace deliveries, drivers, the vehicle fleet, live GPS tracking, and the agent's
+own farmers, buyers, produce stock and payments. It is the logistics partner of **Farm Marketplace**.
 
-## 🌟 Key Features
+## 🏗️ Architecture
 
-*   **🔒 Secure Authentication:** OTP phone login and strict session management.
-*   **📊 Agent Dashboard & Analytics:** Real-time metrics on order status, crop demands, and top-performing farmers.
-*   **🧑‍🌾 Farmer Management:** Complete CRUD operations with secure, isolated data per agent.
-*   **📦 Order Management:** Track order transitions (Pending → Confirmed → Processing → Delivered) with strict validations.
-*   **🤖 AI Agricultural Assistant:** Uses a secure Supabase Edge Function to provide context-aware insights, order risk assessments, and staged transactional tools.
-*   **🎙️ Voice Commands:** Interact with the dashboard and stage orders purely via speech.
-*   **📄 Reports & Export:** Generate localized CSV reports filtered by timeframe.
+```
+Expo app (agent + driver)  ──HTTPS + JWT──▶  Agri Agent backend (backend/, Express + Mongoose)  ──▶  MongoDB Atlas
+                                                    ▲         │                                     (farm_marketplace DB,
+Farm Marketplace backend ──POST order (x-api-key)───┘         └──status callbacks (x-api-key)──▶     agri_* collections only)
+```
 
----
+* **App:** React Native / Expo SDK 57 (Expo Router), TypeScript. It talks only to the backend (`src/lib/api.ts`).
+* **Backend:** Node.js 20+, Express 5, Mongoose 9, JWT auth (bcrypt), zod validation, helmet, rate limiting.
+* **Database:** MongoDB Atlas, the **same database as Farm Marketplace**. Every Agri Agent collection is prefixed
+  `agri_`, so nothing collides with or touches Marketplace data.
+* **Marketplace integration:** see [`docs/MARKETPLACE_INTEGRATION.md`](docs/MARKETPLACE_INTEGRATION.md).
+* **AI assistant / voice:** OpenAI and Sarvam are called from the backend. The keys never ship in the app.
 
-## 🏗️ Architecture & Tech Stack
+### Data boundaries
+* Farm Marketplace stays the source of truth for users, farmers, products, payments, escrow and reviews.
+* Marketplace orders are stored as **logistics-only** jobs: external id, tracking id, pickup/drop + contacts,
+  package summary, driver, vehicle, events, GPS and status. They contain no prices, no payments or escrow data,
+  and no copies of customer accounts.
+* The agent's own business records (their farmers, buyers, produce stock, cash payments, commissions,
+  settlements) are Agri-owned `agri_*` collections and are never mixed with marketplace jobs.
 
-*   **Frontend Framework:** React Native / Expo SDK 54 (Expo Router)
-*   **Language:** TypeScript
-*   **Backend & Auth:** Supabase (PostgreSQL, Supabase Auth, Row Level Security)
-*   **AI Engine:** OpenAI via Supabase Edge Functions (Deno)
-*   **Data Visualization:** React Native Chart Kit & SVG
-*   **Deployment & Build:** EAS (Expo Application Services)
+## 📁 Folder structure
 
----
+```
+backend/
+  src/config/        env.js (validated settings), db.js (MongoDB connection service)
+  src/models/        Mongoose models → agri_* collections
+  src/services/      business logic (intake, dispatch, driver state machine, tracking, sync outbox, …)
+  src/controllers/   request validation (zod) + responses
+  src/routes/        /api/auth, /api/driver, /api/integrations, /api (agent)
+  src/middleware/    JWT auth, marketplace API key, error handler
+  src/jobs/          syncWorker.js (Marketplace callback retries)
+  tests/             jest + supertest (48 tests)
+app/                 Expo Router screens: (auth), (agent), (driver)
+src/lib/api.ts       API client + session (JWT in the device keychain)
+src/services/        typed wrappers around the API, used by the screens
+docs/                integration + migration notes
+```
 
-## 🛡️ Security Posture (Production Hardened)
+### Collections
+`agri_agents`, `agri_drivers`, `agri_vehicles`, `agri_orders`, `agri_delivery_jobs`, `agri_delivery_events`,
+`agri_tracking_history`, `agri_notifications`, `agri_sync_queue`, `agri_sync_logs`, `agri_pickups`,
+`agri_farmers`, `agri_buyers`, `agri_employees`, `agri_products`, `agri_inventory_history`,
+`agri_payments`, `agri_commissions`, `agri_farmer_settlements`, `agri_counters`.
 
-1.  **Strict Row Level Security (RLS):** All tables (`farmers`, `orders`, `notifications`) are restricted to the authenticated agent's ID via `auth.uid()`. Data leakage between agents is impossible at the database level.
-2.  **No Leaked Secrets:** The mobile client bundle only contains public Supabase URL and Anon Keys. Private AI API keys and Service Roles are strictly confined to the server (Edge Functions).
-3.  **Action Chips:** AI cannot execute database queries directly. It stages actions (like creating an order) as structured UI components that require explicit human interaction (`[Confirm Order]`).
-4.  **Error Boundaries:** The application gracefully handles network timeouts, Supabase connection failures, and AI unavailability without crashing.
+## 🚀 Setup
 
----
-
-## 🚀 Environment Setup
-
-1.  **Clone the Repository** and navigate to the root directory.
-2.  **Install Dependencies:**
-    ```bash
-    npm install
-    ```
-3.  **Environment Variables:**
-    Create a `.env` file in the root directory and populate it from `.env.example`:
-    ```env
-    EXPO_PUBLIC_SUPABASE_URL=your-supabase-url
-    EXPO_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-    ```
-    *(Note: `.env` is explicitly git-ignored for security).*
-
----
-
-## 🛠️ Edge Function & AI Setup
-
-To activate the AI Agricultural Assistant, you must configure the backend:
-
-1.  Ensure you have the Supabase CLI installed.
-2.  Set your AI API Key securely in Supabase Secrets:
-    ```bash
-    npx supabase secrets set OPENAI_API_KEY=sk-your-openai-api-key
-    ```
-3.  Deploy the Edge Function:
-    ```bash
-    npx supabase functions deploy agri-ai
-    ```
-
----
-
-## 📱 Running the Application
-
-### Development (Expo Go)
-For standard UI and logic development:
+### 1. Backend
 ```bash
+cd backend
+cp .env.example .env      # then fill in MONGODB_URI, JWT_SECRET, MARKETPLACE_API_KEY, …
+npm install
+npm start                 # or: npm run dev
+```
+Check it: `http://<your-computer-ip>:4000/api/health` → `{"status":"ok","database":"connected"}`.
+
+In **Atlas → Network Access**, allow the IP of the machine running the backend.
+
+### 2. App
+```bash
+npm install
+cp .env.example .env      # EXPO_PUBLIC_API_URL=http://<your-computer-LAN-ip>:4000
 npx expo start -c
 ```
-*(If you need remote testing over a different network, add the `--tunnel` flag).*
+`EXPO_PUBLIC_API_URL` must be reachable from the phone: use the LAN IP, not `localhost`.
 
-### Production Preview Build (Android)
-If you require testing native modules (like native voice recognition), run an EAS internal build:
+### 3. First use
+1. **Sign up** (Agent tab) in the app.
+2. Put that email in `backend/.env` → `MARKETPLACE_DEFAULT_AGENT_EMAIL` so marketplace orders reach you, then restart the backend.
+3. Add vehicles (**Fleet**) and delivery partners (**Delivery Partners**).
+4. Each delivery partner opens the app → Login → **Driver** → *First time? Activate account*, and sets a password.
+
+## 🔐 Security
+* Passwords are hashed with bcrypt, and sessions are signed JWTs (30 days) stored in the device keychain.
+* Every query is scoped to the signed-in agent. Drivers only see their own deliveries.
+* Server secrets live only in `backend/.env` (git-ignored). The app `.env` holds only the public API URL.
+* Marketplace calls are authenticated with a shared key compared in constant time.
+* The AI assistant can only *propose* an order. The agent confirms it in the UI.
+
+## 🧪 Tests
+```bash
+cd backend && npm test
+```
+The tests need a MongoDB server (`MONGODB_TEST_URI`, default `mongodb://127.0.0.1:27017`). They create and drop
+their own `agri_test_*` databases, so never point them at production.
+
+## 📦 Builds
 ```bash
 eas build --profile preview --platform android
+eas build --profile production --platform android
 ```
-
----
-
-## 📦 Android Production Build
-
-When you are ready to publish to the Google Play Store, the `eas.json` configuration is prepared.
-
-1.  **Build the Production Bundle (AAB):**
-    ```bash
-    eas build --profile production --platform android
-    ```
-2.  **Submit to Play Store:**
-    ```bash
-    eas submit --platform android
-    ```
-
----
-
-## 🧪 QA & Troubleshooting
-
-*   **Unmatched Route/404:** Ensure Expo Router's standard layout (`_layout.tsx`) is handling the navigation state. Protected routes redirect to `/login` if unauthenticated.
-*   **Data Not Appearing:** Verify that your Supabase Auth session is active and that your user ID matches the `agent_id` in the `farmers`/`orders` table.
-*   **AI Responding "Not Configured":** Your Edge Function is missing the `OPENAI_API_KEY` secret, or the function has not been deployed successfully.
-
-## 📅 Recent Updates
-*   Integrated Text-to-Speech (TTS) Voice services.
-*   Added dynamic routing for farmers, orders, and payments.
-*   Initial database schema migration setup.
-
----
-*Developed for Agri Agent - Securing Agricultural Operations.*
+For release builds, set `EXPO_PUBLIC_API_URL` to the public HTTPS URL of the deployed backend.

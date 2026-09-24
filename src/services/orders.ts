@@ -1,7 +1,4 @@
-import { supabase } from "../lib/supabase";
-import { updateProductStock } from "./products";
-import { initializeFinancialsForOrder } from "./finance";
-import { createNotification } from "./notifications";
+import { api } from "../lib/api";
 
 export interface Order {
   id: string;
@@ -26,126 +23,52 @@ export interface Order {
 }
 
 export const getOrders = async (): Promise<any[]> => {
-  const { data, error } = await supabase
-    .from("orders")
-    // If buyers table exists, it will join. Otherwise, it might fail. 
-    // It's expected that user ran the SQL to create buyers and add buyer_id to orders.
-    .select("*, farmers(name, phone), buyers(name)")
-    .order("created_at", { ascending: false });
-
-  if (error) {
+  try {
+    return await api.get<any[]>("/orders");
+  } catch (error) {
     console.error("Error fetching orders:", error);
     return [];
   }
-  return data || [];
 };
 
 export const getOrderById = async (id: string): Promise<any | null> => {
-  const { data, error } = await supabase
-    .from("orders")
-    .select("*, farmers(name, phone), buyers(name, phone, location)")
-    .eq("id", id)
-    .single();
-
-  if (error) {
+  try {
+    return await api.get<any>(`/orders/${id}`);
+  } catch (error) {
     console.error("Error fetching order:", error);
     return null;
   }
-  return data;
 };
 
+/** Orders that have no delivery yet (Deliveries → Add). */
+export const getOrdersWithoutDelivery = async (): Promise<any[]> => {
+  try {
+    return await api.get<any[]>("/orders/without-delivery");
+  } catch (error) {
+    console.error("Error fetching orders without delivery:", error);
+    return [];
+  }
+};
+
+/**
+ * The server assigns the order number, deducts stock for a linked product,
+ * creates the payment / commission / settlement records and a notification.
+ */
 export const createOrder = async (orderData: Omit<Order, "id" | "created_at" | "agent_id" | "order_number">): Promise<Order | null> => {
-  const { data: userAuth } = await supabase.auth.getUser();
-  if (!userAuth.user) return null;
-
-  const { data: agentData } = await supabase
-    .from("agents")
-    .select("id")
-    .eq("auth_user_id", userAuth.user.id)
-    .single();
-
-  if (!agentData) return null;
-
-  // Generate an order number like ORD-XXX based on count
-  const { count } = await supabase.from("orders").select("*", { count: "exact", head: true });
-  const orderCount = count || 0;
-  const orderNumber = `ORD-${String(orderCount + 1).padStart(3, '0')}`;
-
-  const { data, error } = await supabase
-    .from("orders")
-    .insert({
-      ...orderData,
-      order_number: orderNumber,
-      agent_id: agentData.id
-    })
-    .select()
-    .single();
-
-  if (error) {
+  try {
+    return await api.post<Order>("/orders", orderData);
+  } catch (error) {
     console.error("Error creating order:", error);
     return null;
   }
-
-  // Deduct stock if linked to a product
-  if (data && data.product_id) {
-    await updateProductStock(
-      data.product_id, 
-      data.quantity, 
-      "Remove", 
-      `Order Placed: ${data.order_number}`
-    );
-  }
-
-  // Initialize Financial records
-  if (data) {
-    await initializeFinancialsForOrder(data);
-    await createNotification(
-      "New Order",
-      "New Order Created",
-      `Order ${data.order_number} for ${data.product} has been placed.`,
-      data.id,
-      "order"
-    );
-  }
-
-  return data;
 };
 
+/** Cancelling restores stock for a linked product (server-side). */
 export const updateOrderStatus = async (id: string, status: Order["status"], cancellationReason?: string): Promise<Order | null> => {
-  // Check if we need to restore stock on cancellation
-  if (status === 'Cancelled') {
-    const order = await getOrderById(id);
-    if (order && order.product_id && order.status !== 'Cancelled') {
-      await updateProductStock(
-        order.product_id,
-        order.quantity,
-        "Add",
-        `Order Cancelled: ${order.order_number || order.id.substring(0,8)}`
-      );
-    }
-  }
-
-  const { data, error } = await supabase
-    .from("orders")
-    .update({ status, cancellation_reason: cancellationReason })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) {
+  try {
+    return await api.post<Order>(`/orders/${id}/status`, { status, cancellation_reason: cancellationReason });
+  } catch (error) {
     console.error("Error updating order status:", error);
     return null;
   }
-  
-  if (data) {
-    await createNotification(
-      "Order Update",
-      `Order ${status}`,
-      `Order ${data.order_number || data.id.substring(0,8)} status changed to ${status}.`,
-      data.id,
-      "order"
-    );
-  }
-  
-  return data;
 };

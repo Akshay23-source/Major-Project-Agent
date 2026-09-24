@@ -1,4 +1,5 @@
-import { supabase } from "../lib/supabase";
+import { api } from "../lib/api";
+import { safe } from "./_safe";
 
 export interface Employee {
   id: string;
@@ -21,91 +22,15 @@ export interface Employee {
   created_at: string;
 }
 
-export const getEmployees = async (): Promise<Employee[]> => {
-  const { data, error } = await supabase
-    .from("employees")
-    .select("*")
-    .order("created_at", { ascending: false });
+export const getEmployees = (): Promise<Employee[]> => safe(api.get<Employee[]>("/employees"), [], "fetching employees");
 
-  if (error) {
-    console.error("Error fetching employees:", error);
-    return [];
-  }
-  return data || [];
-};
+export const getEmployeeById = (id: string): Promise<Employee | null> => safe(api.get<Employee>(`/employees/${id}`), null, "fetching employee");
 
-export const getEmployeeById = async (id: string): Promise<Employee | null> => {
-  const { data, error } = await supabase
-    .from("employees")
-    .select("*")
-    .eq("id", id)
-    .single();
+/** The server assigns the EMP-### id. */
+export const createEmployee = (employeeData: Omit<Employee, "id" | "created_at" | "agent_id" | "employee_id">): Promise<Employee | null> =>
+  safe(api.post<Employee>("/employees", employeeData), null, "creating employee");
 
-  if (error) {
-    console.error("Error fetching employee:", error);
-    return null;
-  }
-  return data;
-};
+export const updateEmployee = (id: string, updates: Partial<Employee>): Promise<Employee | null> =>
+  safe(api.patch<Employee>(`/employees/${id}`, updates), null, "updating employee");
 
-export const createEmployee = async (employeeData: Omit<Employee, "id" | "created_at" | "agent_id" | "employee_id">): Promise<Employee | null> => {
-  const { data: userAuth } = await supabase.auth.getUser();
-  if (!userAuth.user) return null;
-
-  const { data: agentData } = await supabase
-    .from("agents")
-    .select("id")
-    .eq("auth_user_id", userAuth.user.id)
-    .single();
-
-  if (!agentData) return null;
-
-  // Generate employee ID like EMP-XXX
-  const { count } = await supabase.from("employees").select("*", { count: "exact", head: true });
-  const empCount = count || 0;
-  const empId = `EMP-${String(empCount + 1).padStart(3, '0')}`;
-
-  const { data, error } = await supabase
-    .from("employees")
-    .insert({
-      ...employeeData,
-      employee_id: empId,
-      agent_id: agentData.id
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Error creating employee:", error);
-    return null;
-  }
-  return data;
-};
-
-export const updateEmployee = async (id: string, updates: Partial<Employee>): Promise<Employee | null> => {
-  const { data, error } = await supabase
-    .from("employees")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Error updating employee:", error);
-    return null;
-  }
-  return data;
-};
-
-export const deleteEmployee = async (id: string): Promise<boolean> => {
-  const { error } = await supabase
-    .from("employees")
-    .delete()
-    .eq("id", id);
-
-  if (error) {
-    console.error("Error deleting employee:", error);
-    return false;
-  }
-  return true;
-};
+export const deleteEmployee = (id: string): Promise<boolean> => safe(api.delete(`/employees/${id}`).then(() => true), false, "deleting employee");

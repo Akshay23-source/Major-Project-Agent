@@ -1,4 +1,5 @@
-import { supabase } from "../lib/supabase";
+import { api } from "../lib/api";
+import { safe } from "./_safe";
 
 export interface Buyer {
   id: string;
@@ -19,102 +20,23 @@ export interface Buyer {
   created_at: string;
 }
 
-export const getBuyers = async (): Promise<Buyer[]> => {
-  const { data, error } = await supabase
-    .from("buyers")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) {
-    console.error("Error fetching buyers:", error);
-    return [];
-  }
-  return data || [];
-};
+export const getBuyers = (): Promise<Buyer[]> => safe(api.get<Buyer[]>("/buyers"), [], "fetching buyers");
 
-export const getBuyerById = async (id: string): Promise<Buyer | null> => {
-  const { data, error } = await supabase
-    .from("buyers")
-    .select("*")
-    .eq("id", id)
-    .single();
-  if (error) {
-    console.error("Error fetching buyer:", error);
-    return null;
-  }
-  return data;
-};
+export const getBuyerById = (id: string): Promise<Buyer | null> => safe(api.get<Buyer>(`/buyers/${id}`), null, "fetching buyer");
 
-export const createBuyer = async (buyerData: Omit<Buyer, "id" | "created_at" | "agent_id">): Promise<Buyer | null> => {
-  const { data: userAuth } = await supabase.auth.getUser();
-  if (!userAuth.user) return null;
+export const createBuyer = (buyerData: Omit<Buyer, "id" | "created_at" | "agent_id">): Promise<Buyer | null> =>
+  safe(api.post<Buyer>("/buyers", buyerData), null, "creating buyer");
 
-  const { data: agentData } = await supabase
-    .from("agents")
-    .select("id")
-    .eq("auth_user_id", userAuth.user.id)
-    .single();
-  if (!agentData) return null;
+export const updateBuyer = (id: string, updates: Partial<Buyer>): Promise<Buyer | null> =>
+  safe(api.patch<Buyer>(`/buyers/${id}`, updates), null, "updating buyer");
 
-  const { data, error } = await supabase
-    .from("buyers")
-    .insert({
-      ...buyerData,
-      agent_id: agentData.id
-    })
-    .select()
-    .single();
+export const deleteBuyer = (id: string): Promise<boolean> => safe(api.delete(`/buyers/${id}`).then(() => true), false, "deleting buyer");
 
-  if (error) {
-    console.error("Error creating buyer:", error);
-    return null;
-  }
-  return data;
-};
-
-export const updateBuyer = async (id: string, updates: Partial<Buyer>): Promise<Buyer | null> => {
-  const { data, error } = await supabase
-    .from("buyers")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) {
-    console.error("Error updating buyer:", error);
-    return null;
-  }
-  return data;
-};
-
-export const deleteBuyer = async (id: string): Promise<boolean> => {
-  const { error } = await supabase
-    .from("buyers")
-    .delete()
-    .eq("id", id);
-  if (error) {
-    console.error("Error deleting buyer:", error);
-    return false;
-  }
-  return true;
-};
-
-export const getBuyerOrders = async (buyerId: string): Promise<any[]> => {
-  const { data, error } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("buyer_id", buyerId)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("Error fetching buyer orders:", error);
-    return [];
-  }
-  return data || [];
-};
+export const getBuyerOrders = (buyerId: string): Promise<any[]> => safe(api.get<any[]>(`/buyers/${buyerId}/orders`), [], "fetching buyer orders");
 
 export const getBuyerStats = async (buyerId: string) => {
   const orders = await getBuyerOrders(buyerId);
-  
-  let totalOrders = orders.length;
+
   let completedOrders = 0;
   let pendingOrders = 0;
   let totalPurchaseValue = 0;
@@ -128,10 +50,5 @@ export const getBuyerStats = async (buyerId: string) => {
     }
   });
 
-  return {
-    totalOrders,
-    completedOrders,
-    pendingOrders,
-    totalPurchaseValue
-  };
+  return { totalOrders: orders.length, completedOrders, pendingOrders, totalPurchaseValue };
 };

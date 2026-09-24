@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { supabase } from "../../../src/lib/supabase";
+import { api, errorMessage } from "../../../src/lib/api";
 import { createOrder } from "../../../src/services/orders";
 
 type Message = {
@@ -64,13 +64,8 @@ export default function AIAssistantScreen() {
       }));
       conversationHistory.push({ role: "user", content: text });
 
-      const { data, error } = await supabase.functions.invoke("agri-ai", {
-        body: { messages: conversationHistory },
-      });
-
-      if (error) {
-        throw error;
-      }
+      // The Agri Agent backend holds the AI keys and answers from this agent's data only
+      const data = await api.post<{ reply: string; proposedAction?: any }>("/ai/chat", { messages: conversationHistory });
 
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -88,7 +83,7 @@ export default function AIAssistantScreen() {
       addMessage({
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: "AI Assistant is not configured yet or the service is temporarily unavailable. Please verify the Edge Function and API keys are set up correctly.",
+        content: `AI Assistant is unavailable: ${errorMessage(error, "please try again later.")}`,
         timestamp: new Date().toISOString(),
       });
     } finally {
@@ -112,7 +107,8 @@ export default function AIAssistantScreen() {
           status: "Pending" as const,
         };
         
-        await createOrder(orderData);
+        const created = await createOrder(orderData);
+        if (!created) throw new Error("Order was not created");
         
         addMessage({
           id: Date.now().toString(),

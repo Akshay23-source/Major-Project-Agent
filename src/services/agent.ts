@@ -1,8 +1,7 @@
-import { supabase } from "../lib/supabase";
+import { api, authApi } from "../lib/api";
 
 export interface Agent {
   id: string;
-  auth_user_id: string;
   name: string;
   email: string | null;
   phone: string | null;
@@ -16,80 +15,37 @@ export interface Agent {
   notifications_enabled: boolean;
   theme: "System" | "Light" | "Dark";
   language: string;
+  voice_enabled?: boolean;
+  voice_auto_detect?: boolean;
   created_at: string;
 }
 
 export const getCurrentAgent = async (): Promise<Agent | null> => {
-  const { data: userAuth } = await supabase.auth.getUser();
-  if (!userAuth.user) return null;
-
-  const { data, error } = await supabase
-    .from("agents")
-    .select("*")
-    .eq("auth_user_id", userAuth.user.id)
-    .single();
-
-  if (error) {
-    if (error.code === 'PGRST116') {
-      return createDefaultAgentProfile(userAuth.user);
-    }
+  try {
+    return await api.get<Agent>("/agent/me");
+  } catch (error) {
     console.error("Error fetching current agent:", error);
     return null;
   }
-  
-  return data;
-};
-
-const createDefaultAgentProfile = async (user: any): Promise<Agent | null> => {
-  const { data, error } = await supabase
-    .from("agents")
-    .insert({
-      auth_user_id: user.id,
-      name: user.user_metadata?.name || "Agri Agent",
-      email: user.email || "",
-      phone: user.user_metadata?.phone || "9876543210",
-      agent_code: "AG-001",
-      assigned_area: "Not set"
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Error creating default agent:", error);
-    return null;
-  }
-
-  return data;
 };
 
 export const updateCurrentAgent = async (updates: Partial<Agent>): Promise<Agent | null> => {
-  const { data: userAuth } = await supabase.auth.getUser();
-  if (!userAuth.user) return null;
-
-  const { data, error } = await supabase
-    .from("agents")
-    .update(updates)
-    .eq("auth_user_id", userAuth.user.id)
-    .select()
-    .single();
-
-  if (error) {
+  try {
+    const { id, email, created_at, agent_code, ...allowed } = updates as any;
+    return await api.patch<Agent>("/agent/me", allowed);
+  } catch (error) {
     console.error("Error updating agent:", error);
     return null;
   }
-  
-  return data;
 };
 
-export const changePassword = async (newPassword: string): Promise<boolean> => {
-  const { error } = await supabase.auth.updateUser({
-    password: newPassword
-  });
-
-  if (error) {
+/** Needs the current password (the backend verifies it before changing). */
+export const changePassword = async (newPassword: string, currentPassword: string): Promise<boolean> => {
+  try {
+    await authApi.changePassword(currentPassword, newPassword);
+    return true;
+  } catch (error) {
     console.error("Error changing password:", error);
     return false;
   }
-
-  return true;
 };

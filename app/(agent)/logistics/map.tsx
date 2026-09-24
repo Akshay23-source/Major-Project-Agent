@@ -2,14 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions, FlatList, TouchableOpacity } from 'react-native';
 import { AppHeader } from '../../../src/components/ui/AppHeader';
 import { Colors } from '../../../src/theme/colors';
-import { subscribeToAllDriverLocations } from '../../../src/services/logistics/location';
+import { getAllDriverLocations, subscribeToAllDriverLocations } from '../../../src/services/logistics/location';
 import { DriverLocation } from '../../../src/services/tracking';
 import { getDeliveryPartners, DeliveryPartner } from '../../../src/services/logistics';
 import { calculateRoute } from '../../../src/services/logistics/routes';
 import { useRouter } from 'expo-router';
 // Import the universal LiveMap
 import LiveMap from '../../../src/components/maps/LiveMap';
-import { supabase } from '../../../src/lib/supabase';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IS_MOBILE = SCREEN_WIDTH < 768;
@@ -24,7 +23,7 @@ export default function LogisticsMapScreen() {
   useEffect(() => {
     loadInitialData();
 
-    // Subscribe to real-time location updates from location.ts
+    // Live location updates (polls the backend every few seconds)
     const unsubscribe = subscribeToAllDriverLocations((newLocation) => {
       setDrivers((prev) => {
         const existingIdx = prev.findIndex(d => d.delivery_partner_id === newLocation.delivery_partner_id);
@@ -52,17 +51,8 @@ export default function LogisticsMapScreen() {
       }
       setPartners(pMap);
       
-      // Fetch the latest driver_locations from the DB here
-      const { data: dbLocations, error: locErr } = await supabase
-        .from('driver_locations')
-        .select('*');
-        
-      if (locErr) {
-        console.error("Error fetching locations:", locErr);
-      } else if (dbLocations) {
-        // Only set real driver locations
-        setDrivers(dbLocations);
-      }
+      // Latest known position of each of this agent's drivers
+      setDrivers(await getAllDriverLocations());
     } catch (error) {
       console.error("Failed to load map data", error);
       // Don't swallow entirely, but don't crash. We can keep an empty state.
