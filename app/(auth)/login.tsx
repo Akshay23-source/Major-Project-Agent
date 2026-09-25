@@ -1,382 +1,418 @@
-import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
+  Alert,
+  Animated,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { authApi, errorMessage } from "../../src/lib/api";
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authApi, errorMessage } from '../../src/lib/api';
+import { AuthButton, AuthHero, AuthInput, useEntrance } from '../../src/components/auth';
+import { BrandColors, BrandRadius, BrandShadow, BrandSpace, BrandType, TOUCH_TARGET } from '../../src/theme/brand';
+
+type Role = 'agent' | 'driver';
+
+const ROLES: { key: Role; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'agent', label: 'Agent', icon: 'briefcase-outline' },
+  { key: 'driver', label: 'Driver', icon: 'car-outline' },
+];
+
+/** Remember Me keeps only the role + email/phone on this device (never the password). */
+const REMEMBER_KEY = 'agri_remember_login';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const digitsOf = (v: string) => v.replace(/\D/g, '');
 
 export default function LoginScreen() {
-  const [activeTab, setActiveTab] = useState<'email' | 'driver'>('email');
+  const insets = useSafeAreaInsets();
+  const [role, setRole] = useState<Role>('agent');
 
   // Agent (email) state
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  // Driver (phone) state
+  const [driverPhone, setDriverPhone] = useState('');
+  const [driverPassword, setDriverPassword] = useState('');
 
-  // Driver (email) state
-  const [driverEmail, setDriverEmail] = useState("");
-  const [driverPassword, setDriverPassword] = useState("");
-
+  const [rememberMe, setRememberMe] = useState(false);
+  const [errors, setErrors] = useState<{ id?: string; password?: string }>({});
+  const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const passwordRef = useRef<TextInput>(null);
+
+  const sheetAnim = useEntrance(80);
+  const formAnim = useEntrance(0, role, 10);
+
+  // Restore the remembered role + identifier
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(REMEMBER_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw) as { role: Role; id: string };
+        setRole(saved.role);
+        if (saved.role === 'agent') setEmail(saved.id);
+        else setDriverPhone(saved.id);
+        setRememberMe(true);
+      } catch {
+        // storage unavailable: start empty
+      }
+    })();
+  }, []);
+
+  const persistRemember = async (r: Role, id: string) => {
+    try {
+      if (rememberMe) await AsyncStorage.setItem(REMEMBER_KEY, JSON.stringify({ role: r, id }));
+      else await AsyncStorage.removeItem(REMEMBER_KEY);
+    } catch {
+      // non-critical
+    }
+  };
+
+  const switchRole = (r: Role) => {
+    setRole(r);
+    setErrors({});
+    setFormError(null);
+  };
 
   // --- AGENT: EMAIL + PASSWORD ---
   const handleEmailLogin = async () => {
-    if (!email.trim() || !password) {
-      Alert.alert("Error", "Please enter your email and password.");
-      return;
-    }
+    const next: typeof errors = {};
+    if (!email.trim()) next.id = 'Email is required';
+    else if (!EMAIL_RE.test(email.trim())) next.id = 'Enter a valid email address';
+    if (!password) next.password = 'Password is required';
+    setErrors(next);
+    setFormError(null);
+    if (next.id || next.password) return;
+
     setLoading(true);
     try {
       await authApi.agentLogin(email.trim(), password);
-      router.replace("/dashboard");
+      await persistRemember('agent', email.trim().toLowerCase());
+      router.replace('/dashboard');
     } catch (e) {
-      Alert.alert("Login Failed", errorMessage(e));
+      setFormError(errorMessage(e));
     } finally {
       setLoading(false);
     }
   };
 
-  // --- DRIVER: EMAIL + PASSWORD ---
+  // --- DRIVER: PHONE + PASSWORD ---
   const handleDriverLogin = async () => {
-    if (!driverEmail.trim() || !driverPassword) {
-      Alert.alert("Error", "Please enter your email and password.");
-      return;
-    }
+    const next: typeof errors = {};
+    if (!driverPhone.trim()) next.id = 'Mobile number is required';
+    else if (digitsOf(driverPhone).length < 10) next.id = 'Enter a valid 10-digit mobile number';
+    if (!driverPassword) next.password = 'Password is required';
+    setErrors(next);
+    setFormError(null);
+    if (next.id || next.password) return;
+
     setLoading(true);
     try {
-      await authApi.driverLogin(driverEmail.trim(), driverPassword);
-      router.replace("/(driver)/dashboard");
+      await authApi.driverLogin(driverPhone.trim(), driverPassword);
+      await persistRemember('driver', driverPhone.trim());
+      router.replace('/(driver)/dashboard');
     } catch (e) {
-      Alert.alert("Login Failed", errorMessage(e));
+      setFormError(errorMessage(e));
     } finally {
       setLoading(false);
     }
   };
 
+  const handleForgotPassword = () => {
+    Alert.alert(
+      'Forgot Password',
+      role === 'agent'
+        ? 'Please contact your AgriAgent administrator to reset your password.'
+        : 'Ask the agent who registered you to reset your password.'
+    );
+  };
+
+  const isAgent = role === 'agent';
+
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          
-          <View style={styles.header}>
-            <Text style={styles.title}>Login</Text>
-            <Text style={styles.subtitle}>Welcome back! Please login to{"\n"}continue</Text>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <StatusBar style="light" />
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <AuthHero tagline="Farm-to-buyer logistics, connected to Farm Marketplace" showChips />
+
+        <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + BrandSpace.xxl }, sheetAnim]}>
+          <Text style={styles.title}>Welcome Back</Text>
+          <Text style={styles.subtitle}>
+            Sign in to manage marketplace orders, pickups and your delivery fleet.
+          </Text>
+
+          <Text style={styles.fieldLabel}>Sign in as</Text>
+          <View style={styles.roleContainer}>
+            {ROLES.map((r) => {
+              const active = role === r.key;
+              return (
+                <TouchableOpacity
+                  key={r.key}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={[styles.roleButton, active && styles.roleButtonActive]}
+                  onPress={() => switchRole(r.key)}
+                >
+                  <Ionicons name={r.icon} size={16} color={active ? BrandColors.white : BrandColors.muted} />
+                  <Text style={[styles.roleButtonText, active && styles.roleButtonTextActive]}>{r.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          {/* TABS */}
-          <View style={styles.tabContainer}>
-            <TouchableOpacity 
-              style={[styles.tab, activeTab === 'email' && styles.activeTab]} 
-              onPress={() => setActiveTab('email')}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.tabText, activeTab === 'email' && styles.activeTabText]}>Agent</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.tab, activeTab === 'driver' && styles.activeTab]} 
-              onPress={() => setActiveTab('driver')}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.tabText, activeTab === 'driver' && styles.activeTabText]}>Driver</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* DYNAMIC FORM */}
-          <View style={styles.formContainer}>
-            
-            {activeTab === 'email' ? (
-              // EMAIL FORM
-              <>
-                <Text style={styles.label}>Email Address</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your email"
-                    placeholderTextColor="#9CA3AF"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-
-                <Text style={styles.label}>Password</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your password"
-                    placeholderTextColor="#9CA3AF"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                  />
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                    <Ionicons name={showPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#6B7280" />
-                  </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.primaryButton, loading && { opacity: 0.7 }]}
-                  onPress={handleEmailLogin}
-                  disabled={loading}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.primaryButtonText}>{loading ? "Authenticating..." : "Login"}</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              // DRIVER EMAIL FORM
-              <>
-                <Text style={styles.label}>Email Address</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your email"
-                    placeholderTextColor="#9CA3AF"
-                    value={driverEmail}
-                    onChangeText={setDriverEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-
-                <Text style={styles.label}>Password</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your password"
-                    placeholderTextColor="#9CA3AF"
-                    value={driverPassword}
-                    onChangeText={setDriverPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                  />
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                    <Ionicons name={showPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#6B7280" />
-                  </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.primaryButton, loading && { opacity: 0.7 }]}
-                  onPress={handleDriverLogin}
-                  disabled={loading}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.primaryButtonText}>{loading ? "Authenticating..." : "Login"}</Text>
-                </TouchableOpacity>
-              </>
+          <Animated.View style={formAnim}>
+            {!!formError && (
+              <View style={styles.formError}>
+                <Ionicons name="alert-circle" size={18} color={BrandColors.error} />
+                <Text style={styles.formErrorText}>{formError}</Text>
+              </View>
             )}
 
+            {isAgent ? (
+              <AuthInput
+                key="agent-id"
+                label="Email Address"
+                icon="mail-outline"
+                placeholder="you@example.com"
+                value={email}
+                onChangeText={(v) => {
+                  setEmail(v);
+                  if (errors.id) setErrors((e) => ({ ...e, id: undefined }));
+                }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                textContentType="emailAddress"
+                returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
+                error={errors.id}
+              />
+            ) : (
+              <AuthInput
+                key="driver-id"
+                label="Mobile Number"
+                icon="call-outline"
+                placeholder="Number registered by your agent"
+                value={driverPhone}
+                onChangeText={(v) => {
+                  setDriverPhone(v);
+                  if (errors.id) setErrors((e) => ({ ...e, id: undefined }));
+                }}
+                keyboardType="phone-pad"
+                autoComplete="tel"
+                textContentType="telephoneNumber"
+                maxLength={15}
+                returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
+                error={errors.id}
+              />
+            )}
+
+            <AuthInput
+              ref={passwordRef}
+              label="Password"
+              icon="lock-closed-outline"
+              placeholder="Enter your password"
+              value={isAgent ? password : driverPassword}
+              onChangeText={(v) => {
+                if (isAgent) setPassword(v);
+                else setDriverPassword(v);
+                if (errors.password) setErrors((e) => ({ ...e, password: undefined }));
+              }}
+              passwordToggle
+              autoCapitalize="none"
+              autoComplete="password"
+              textContentType="password"
+              returnKeyType="go"
+              onSubmitEditing={isAgent ? handleEmailLogin : handleDriverLogin}
+              error={errors.password}
+            />
+
+            <View style={styles.optionsRow}>
+              <TouchableOpacity
+                style={styles.rememberRow}
+                activeOpacity={0.7}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: rememberMe }}
+                onPress={() => setRememberMe((v) => !v)}
+              >
+                <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
+                  {rememberMe && <Ionicons name="checkmark" size={14} color={BrandColors.white} />}
+                </View>
+                <Text style={styles.rememberText}>Remember me</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.forgotButton} onPress={handleForgotPassword}>
+                <Text style={styles.forgotText}>Forgot Password?</Text>
+              </TouchableOpacity>
+            </View>
+
+            <AuthButton
+              title={isAgent ? 'Login as Agent' : 'Login as Driver'}
+              icon="arrow-forward"
+              onPress={isAgent ? handleEmailLogin : handleDriverLogin}
+              loading={loading}
+              loadingText="Signing in…"
+            />
+          </Animated.View>
+
+          <View style={styles.registerRow}>
+            <Text style={styles.registerText}>
+              {isAgent ? "Don't have an account? " : 'First time here? '}
+            </Text>
+            <TouchableOpacity onPress={() => router.push({ pathname: '/register', params: { role } })}>
+              <Text style={styles.registerLink}>{isAgent ? 'Register' : 'Activate account'}</Text>
+            </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+
+          <View style={styles.footer}>
+            <View style={styles.footerDivider} />
+            <View style={styles.footerRow}>
+              <Ionicons name="shield-checkmark-outline" size={14} color={BrandColors.muted} />
+              <Text style={styles.footerText}>Secure sign-in · Your data stays on AgriAgent servers</Text>
+            </View>
+            <Text style={styles.footerBrand}>AgriAgent Logistics · A Farm Marketplace partner</Text>
+          </View>
+        </Animated.View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  container: { flex: 1, backgroundColor: BrandColors.background },
+  scroll: { flexGrow: 1 },
+  sheet: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 40 : 60,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 32,
+    backgroundColor: BrandColors.surface,
+    borderTopLeftRadius: BrandRadius.xxl,
+    borderTopRightRadius: BrandRadius.xxl,
+    marginTop: -BrandSpace.xxl,
+    paddingHorizontal: BrandSpace.xl,
+    paddingTop: BrandSpace.xl,
+    ...BrandShadow.lg,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#111827",
-    marginBottom: 8,
+    fontSize: BrandType.size.huge,
+    lineHeight: BrandType.leading.huge,
+    fontWeight: BrandType.weight.extrabold,
+    color: BrandColors.text,
+    letterSpacing: BrandType.tracking.tight,
   },
   subtitle: {
-    fontSize: 15,
-    color: "#6B7280",
-    lineHeight: 22,
+    marginTop: BrandSpace.xs,
+    marginBottom: BrandSpace.xl,
+    fontSize: BrandType.size.sm,
+    lineHeight: BrandType.leading.sm,
+    color: BrandColors.textSecondary,
   },
-  tabContainer: {
+  fieldLabel: {
+    fontSize: BrandType.size.xs,
+    lineHeight: BrandType.leading.xs,
+    fontWeight: BrandType.weight.bold,
+    color: BrandColors.textSecondary,
+    letterSpacing: BrandType.tracking.wider,
+    textTransform: 'uppercase',
+    marginBottom: BrandSpace.sm,
+  },
+  roleContainer: {
     flexDirection: 'row',
-    backgroundColor: '#FAFCFA',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 32,
+    gap: BrandSpace.xs,
+    backgroundColor: BrandColors.surfaceAlt,
+    borderRadius: BrandRadius.lg,
+    borderWidth: 1,
+    borderColor: BrandColors.border,
+    padding: BrandSpace.xs,
+    marginBottom: BrandSpace.xl,
   },
-  tab: {
+  roleButton: {
     flex: 1,
-    height: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: BrandSpace.xs + 2,
+    minHeight: TOUCH_TARGET,
+    borderRadius: BrandRadius.md,
+  },
+  roleButtonActive: { backgroundColor: BrandColors.primary, ...BrandShadow.xs },
+  roleButtonText: {
+    fontSize: BrandType.size.sm,
+    fontWeight: BrandType.weight.semibold,
+    color: BrandColors.textSecondary,
+  },
+  roleButtonTextActive: { color: BrandColors.white },
+  formError: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: BrandSpace.sm,
+    backgroundColor: BrandColors.errorSoft,
+    borderRadius: BrandRadius.md,
+    padding: BrandSpace.md - 4,
+    marginBottom: BrandSpace.md,
+  },
+  formErrorText: {
+    flex: 1,
+    color: BrandColors.error,
+    fontSize: BrandType.size.sm,
+    lineHeight: BrandType.leading.sm,
+    fontWeight: BrandType.weight.medium,
+  },
+  optionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: BrandSpace.md,
+    marginBottom: BrandSpace.xl,
+  },
+  rememberRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, minHeight: TOUCH_TARGET },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: BrandRadius.sm,
+    borderWidth: 2,
+    borderColor: BrandColors.borderStrong,
+    marginRight: BrandSpace.sm,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8,
   },
-  activeTab: {
-    backgroundColor: '#E6F4EA',
-    borderWidth: 1,
-    borderColor: '#C3E8CC',
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  activeTabText: {
-    color: '#0B8F3C',
-  },
-  formContainer: {
-    flex: 1,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#374151",
-    marginBottom: 8,
-  },
-  inputContainer: {
-    height: 52,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    backgroundColor: "#FFFFFF",
-    marginBottom: 20,
-  },
-  mobileInputRow: {
+  checkboxActive: { backgroundColor: BrandColors.primary, borderColor: BrandColors.primary },
+  rememberText: { fontSize: BrandType.size.sm, color: BrandColors.textSecondary },
+  forgotButton: { justifyContent: 'center', minHeight: TOUCH_TARGET },
+  forgotText: { fontSize: BrandType.size.sm, color: BrandColors.primary, fontWeight: BrandType.weight.semibold },
+  registerRow: {
     flexDirection: 'row',
-    height: 52,
-    marginBottom: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginTop: BrandSpace.lg,
   },
-  countryCode: {
-    width: 80,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: "#FFFFFF",
-  },
-  countryCodeText: {
-    fontSize: 14,
-    color: "#111827",
-    fontWeight: '500',
-  },
-  mobileInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderLeftWidth: 0,
-    borderColor: "#E5E7EB",
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    color: "#111827",
-    backgroundColor: "#FFFFFF",
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: "#111827",
-  },
-  forgotButton: {
-    alignSelf: "flex-end",
-    marginBottom: 28,
-    marginTop: -8,
-  },
-  forgotText: {
-    color: "#0B8F3C",
-    fontWeight: "600",
-    fontSize: 13,
-  },
-  primaryButton: {
-    height: 54,
-    backgroundColor: "#0B8F3C",
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: '#0B8F3C',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  primaryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  dividerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 36,
-    marginBottom: 24,
-  },
-  divider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#F3F4F6",
-  },
-  orText: {
-    marginHorizontal: 16,
-    fontSize: 13,
-    color: "#9CA3AF",
-    fontWeight: "500",
-  },
-  socialRow: {
-    flexDirection: "row",
-    gap: 16,
-    marginBottom: 40,
-  },
-  socialButton: {
-    flex: 1,
-    height: 52,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: "#FFFFFF",
-  },
-  socialText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
-  },
-  signupContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  signupText: {
-    color: "#6B7280",
-    fontSize: 14,
-  },
-  signupLink: {
-    color: "#0B8F3C",
-    fontWeight: "700",
-    fontSize: 14,
+  registerText: { fontSize: BrandType.size.sm, color: BrandColors.textSecondary },
+  registerLink: { fontSize: BrandType.size.sm, fontWeight: BrandType.weight.bold, color: BrandColors.primary },
+  footer: { marginTop: BrandSpace.xxl, alignItems: 'center', gap: BrandSpace.xs + 2 },
+  footerDivider: { width: 48, height: 4, borderRadius: 2, backgroundColor: BrandColors.border, marginBottom: BrandSpace.sm },
+  footerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  footerText: { fontSize: BrandType.size.xs, color: BrandColors.muted },
+  footerBrand: {
+    fontSize: BrandType.size.xs,
+    color: BrandColors.textSecondary,
+    fontWeight: BrandType.weight.semibold,
+    letterSpacing: BrandType.tracking.wide,
   },
 });

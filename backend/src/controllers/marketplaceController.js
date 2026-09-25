@@ -11,8 +11,10 @@ const noteSchema = z.object({ note: z.string().max(500).optional() });
 module.exports = {
   // Called by the Farm Marketplace backend (x-api-key)
   ingest: async (req, res) => {
+    const b = req.body || {};
+    console.log(`[intake] received externalOrderId=${b.externalOrderId} orderNumber=${b.orderNumber} status=${b.orderStatus} products=${Array.isArray(b.products) ? b.products.length : 'none'}`);
     const { status, body } = await intake.ingest(req.body);
-    console.log(`[intake] ${body.action} ${body.orderNumber}`);
+    console.log(`[intake] ${body.action} ${body.orderNumber} → ${status} (agri_orders _id=${body.logisticsOrderId}, tracking ${body.trackingId})`);
     res.status(status).json(body);
   },
 
@@ -21,7 +23,11 @@ module.exports = {
     const filter = String(req.query.filter || 'ALL').toUpperCase();
     res.json(serialize(await mkt.list(req.user.agentId, filter)));
   },
-  metrics: async (req, res) => res.json(await mkt.metrics(req.user.agentId)),
+  metrics: async (req, res) => {
+    const m = await mkt.metrics(req.user.agentId);
+    console.log(`[marketplace] metrics agent_id=${req.user.agentId}`, m);
+    res.json(m);
+  },
   accept: async (req, res) => res.json(serialize((await mkt.accept(req.user.agentId, requireId(req.params.id))).toObject())),
   reject: async (req, res) =>
     res.json(serialize((await mkt.reject(req.user.agentId, requireId(req.params.id), parse(reasonSchema, req.body).reason)).toObject())),

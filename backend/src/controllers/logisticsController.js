@@ -55,7 +55,12 @@ const pickupSchema = z.object({
 const agent = (req) => req.user.agentId;
 
 module.exports = {
-  dashboard: async (req, res) => res.json(await dashboardService.dashboard(agent(req))),
+  dashboard: async (req, res) => {
+    const started = Date.now();
+    const data = await dashboardService.dashboard(agent(req));
+    console.log(`[dashboard] agent_id=${agent(req)} kpis=${JSON.stringify(data.kpis)} active=${data.activeOrders.length} (${Date.now() - started}ms)`);
+    res.json(data);
+  },
 
   // Orders → dispatch
   orderDispatchView: async (req, res) => res.json(await orders.dispatchView(agent(req), requireId(req.params.id))),

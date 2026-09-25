@@ -19,6 +19,7 @@ import { getUnreadCount } from '../../src/services/notifications';
 import { useLocalization } from '../../src/hooks/useLocalization';
 import { getMarketplaceMetrics, MarketplaceMetrics } from '../../src/services/integration/marketplaceOrders';
 import { getLogisticsDashboard } from '../../src/services/logistics';
+import { errorMessage } from '../../src/lib/api';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -28,6 +29,7 @@ export default function AgentDashboard() {
   const { t } = useLocalization();
   
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   
   const [kpis, setKpis] = useState({
     incomingOrders: 0,
@@ -53,8 +55,11 @@ export default function AgentDashboard() {
 
   const loadDashboardData = async () => {
     setLoading(true);
+    setLoadError(null);
+    console.log('[dashboard] loading…');
     try {
       const [count, dashboard] = await Promise.all([getUnreadCount(), getLogisticsDashboard()]);
+      console.log('[dashboard] loaded', { kpis: dashboard.kpis, active: dashboard.activeOrders?.length, urgent: dashboard.urgentOrders?.length, unread: count });
 
       setKpis({
         incomingOrders: dashboard.kpis.incomingOrders || 0,
@@ -72,13 +77,16 @@ export default function AgentDashboard() {
 
       // Marketplace integration KPIs — isolated so a failure never blanks the dashboard
       try {
-        setMarketplace(await getMarketplaceMetrics());
+        const metrics = await getMarketplaceMetrics();
+        console.log('[dashboard] marketplace metrics', metrics);
+        setMarketplace(metrics);
       } catch (mErr) {
         console.warn('Marketplace metrics unavailable:', mErr);
         setMarketplace(null);
       }
     } catch (e) {
-      console.error(e);
+      console.error('[dashboard] load failed:', e);
+      setLoadError(errorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -106,6 +114,13 @@ export default function AgentDashboard() {
           <ActivityIndicator size="large" color={Colors.primary} style={{ marginVertical: 40 }} />
         ) : (
           <>
+            {loadError && (
+              <TouchableOpacity style={styles.errorBox} onPress={loadDashboardData}>
+                <Text style={styles.errorText}>{loadError}</Text>
+                <Text style={styles.errorRetry}>Tap to retry</Text>
+              </TouchableOpacity>
+            )}
+
             {/* KPI Cards Section */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Operations Overview</Text>
@@ -267,5 +282,8 @@ const styles = StyleSheet.create({
   routeValue: { fontSize: 14, color: Colors.text, fontWeight: '500' },
   routeArrow: { paddingHorizontal: 12 },
   
-  emptyText: { textAlign: 'center', color: Colors.textSecondary, marginVertical: 12 }
+  emptyText: { textAlign: 'center', color: Colors.textSecondary, marginVertical: 12 },
+  errorBox: { backgroundColor: Colors.error + '15', borderColor: Colors.error, borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 16 },
+  errorText: { color: Colors.error, fontSize: 14, fontWeight: '600' },
+  errorRetry: { color: Colors.error, fontSize: 12, marginTop: 4 },
 });

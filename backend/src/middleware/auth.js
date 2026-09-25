@@ -21,14 +21,22 @@ const readToken = (req) => {
 
 const requireAuth = (...roles) => (req, _res, next) => {
   const token = readToken(req);
-  if (!token) return next(unauthorized('Sign in required'));
+  if (!token) {
+    console.warn(`[auth] 401 ${req.method} ${req.originalUrl}: no Bearer token`);
+    return next(unauthorized('Sign in required'));
+  }
   try {
     const payload = jwt.verify(token, env.jwtSecret, { algorithms: ['HS256'] });
     req.user = { id: payload.sub, role: payload.role, agentId: payload.agent_id };
-  } catch {
+  } catch (err) {
+    console.warn(`[auth] 401 ${req.method} ${req.originalUrl}: invalid token (${err.message}; starts "${token.slice(0, 12)}")`);
     return next(unauthorized('Session expired. Please sign in again.'));
   }
-  if (roles.length && !roles.includes(req.user.role)) return next(forbidden());
+  if (roles.length && !roles.includes(req.user.role)) {
+    console.warn(`[auth] 403 ${req.method} ${req.originalUrl}: role ${req.user.role} not in [${roles.join(', ')}]`);
+    return next(forbidden());
+  }
+  if (!env.isTest) console.log(`[auth] ok ${req.method} ${req.originalUrl} role=${req.user.role} agent_id=${req.user.agentId}`);
   return next();
 };
 

@@ -118,7 +118,10 @@ const trackingIdFor = (id) => `AGRI-${String(id).slice(-10).toUpperCase()}`;
 let cachedAgent = null;
 const resolveAgent = async () => {
   if (cachedAgent && cachedAgent.email === env.marketplace.defaultAgentEmail) return cachedAgent;
-  if (!env.marketplace.defaultAgentEmail) throw new HttpError(503, 'Marketplace integration is not configured');
+  if (!env.marketplace.defaultAgentEmail) {
+    console.error('[intake] MARKETPLACE_DEFAULT_AGENT_EMAIL is empty in backend/.env');
+    throw new HttpError(503, 'Marketplace integration is not configured');
+  }
   const agent = await Agent.findOne({ email: env.marketplace.defaultAgentEmail }).lean();
   if (!agent) {
     console.error('[intake] MARKETPLACE_DEFAULT_AGENT_EMAIL does not match any agent account');
@@ -144,10 +147,12 @@ const response = (action, order) => ({
 const ingest = async (payload) => {
   const errors = validatePayload(payload);
   if (errors.length) {
+    console.warn(`[intake] rejected ${payload?.externalOrderId}: ${errors.join('; ')}`);
     const err = badRequest('Invalid order payload', errors);
     throw err;
   }
   const agent = await resolveAgent();
+  console.log(`[intake] assigning to agent ${agent.email} (_id=${agent._id})`);
   const externalOrderId = str(payload.externalOrderId);
   const f = extract(payload);
 
@@ -184,6 +189,7 @@ const ingest = async (payload) => {
 
   try {
     await order.save();
+    console.log(`[intake] saved agri_orders _id=${order._id} agent_id=${order.agent_id} logistics_status=${order.logistics_status}`);
   } catch (err) {
     // Two deliveries of the same order raced: the unique index let one win — treat as a re-send.
     if (err && err.code === 11000) {

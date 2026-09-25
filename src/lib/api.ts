@@ -17,6 +17,11 @@ if (!RAW_URL) {
 
 export const API_URL = RAW_URL;
 
+/** A request that gets no answer (wrong IP, firewall, backend down) fails after this instead of hanging forever. */
+const REQUEST_TIMEOUT_MS = 15000;
+
+console.log(`[api] base URL: ${API_URL || "(missing)"}`);
+
 export type Role = "agent" | "driver";
 
 export interface Session {
@@ -115,15 +120,38 @@ const request = async <T>(method: string, path: string, body?: unknown, query?: 
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (session?.token) headers.Authorization = `Bearer ${session.token}`;
 
+  const url = buildUrl(path, query);
+  const started = Date.now();
+  console.log(`[api] → ${method} ${url} (auth: ${session?.token ? "yes" : "no"})`);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(buildUrl(path, query), {
+    res = await fetch(url, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
     });
   } catch (e: any) {
-    throw new ApiError(0, `Cannot reach the Agri Agent server at ${API_URL}. Check your connection.`);
+    const timedOut = e?.name === "AbortError";
+    console.error(`[api] ✗ ${method} ${path} ${timedOut ? `timed out after ${REQUEST_TIMEOUT_MS}ms` : `network error: ${e?.message}`}`);
+    throw new ApiError(
+      0,
+      timedOut
+        ? `The Agri Agent server at ${API_URL} did not respond in ${REQUEST_TIMEOUT_MS / 1000}s. Check the IP, that the backend is running, and the firewall.`
+        : `Cannot reach the Agri Agent server at ${API_URL}. Check your connection.`
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+  console.log(`[api] ← ${res.status} ${method} ${path} (${Date.now() - started}ms)`);
+
+  // Invalid or expired token (e.g. an old demo session): sign out so the app returns to login.
+  if (res.status === 401 && session?.token && !path.startsWith("/auth/")) {
+    console.warn("[api] 401 with a stored session — signing out");
+    await signOut();
   }
 
   if (res.status === 204) return undefined as T;
@@ -157,43 +185,40 @@ export const errorMessage = (e: unknown, fallback = "Something went wrong. Pleas
 };
 
 // ─────────────────────────────────────────────
-// Auth endpoints — real authentication is DISABLED.
-// Anyone can sign in as the demo agent (agent@gmail.com / 789969) or as the
-// demo driver (driver@gmail.com / 789969). Sessions are created locally and
-// the backend is never contacted for login.
+// Auth endpoints — real JWTs from the Agri Agent backend (/api/auth/*).
 // ─────────────────────────────────────────────
 
-const DEMO = {
-  agent: { email: "agent@gmail.com", password: "789969", name: "Demo Agent" },
-  driver: { email: "driver@gmail.com", password: "789969", name: "Demo Driver" },
-} as const;
-
-const makeDemoSession = (role: Role, name: string, email: string): Session => ({
-  token: `demo-${role}-token`,
-  role,
-  user: { id: role === "agent" ? "demo-agent" : "demo-driver", name, email, role },
-});
-
 export const authApi = {
-  /** Agent demo sign-in: agent@gmail.com / 789969 */
+  /** Agent sign-in: POST /api/auth/agent/login → { token, role, user } */
   agentLogin: async (email: string, password: string) => {
-    if (email.trim().toLowerCase() === DEMO.agent.email && password === DEMO.agent.password) {
-      const s = makeDemoSession("agent", DEMO.agent.name, DEMO.agent.email);
-      await setSession(s);
-      return s;
-    }
-    throw new ApiError(401, "Invalid email or password.");
+    const s = await api.post<Session>("/auth/agent/login", { email: email.trim().toLowerCase(), password });
+    await setSession(s);
+    console.log(`[auth] agent signed in: ${s.user.email} (${s.user.id})`);
+    return s;
   },
 
-  /** Driver demo sign-in: driver@gmail.com / 789969 */
-  driverLogin: async (email: string, password: string) => {
-    if (email.trim().toLowerCase() === DEMO.driver.email && password === DEMO.driver.password) {
-      const s = makeDemoSession("driver", DEMO.driver.name, DEMO.driver.email);
-      await setSession(s);
-      return s;
-    }
-    throw new ApiError(401, "Invalid email or password.");
+  /** Driver sign-in: POST /api/auth/driver/login with the phone registered by the agent. */
+  driverLogin: async (phone: string, password: string) => {
+    const s = await api.post<Session>("/auth/driver/login", { phone: phone.trim(), password });
+    await setSession(s);
+    console.log(`[auth] driver signed in: ${s.user.phone} (${s.user.id})`);
+    return s;
   },
+
+  /**
+   * Agent sign-up: POST /api/auth/agent/signup → { token, role, user }.
+   * Returns the session without saving it, so the screen can show its success state first;
+   * call setSession() to sign in.
+   */
+  agentSignup: (data: { name: string; email: string; password: string; phone?: string }) =>
+    api.post<Session>("/auth/agent/signup", { ...data, email: data.email.trim().toLowerCase() }),
+
+  /**
+   * Driver first-time activation: POST /api/auth/driver/activate. The phone must already be
+   * registered by an agent. Returns the session without saving it (see agentSignup).
+   */
+  driverActivate: (phone: string, password: string) =>
+    api.post<Session>("/auth/driver/activate", { phone: phone.trim(), password }),
 
   changePassword: (current_password: string, new_password: string) =>
     api.post<{ success: boolean }>("/auth/password", { current_password, new_password }),
