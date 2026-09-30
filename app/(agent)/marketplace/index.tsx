@@ -1,5 +1,5 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Colors } from '../../../src/theme/colors';
 import { StatusBadge } from '../../../src/components/ui/StatusBadge';
+import { SummaryCard } from '../../../src/components/ui/SummaryCard';
 import {
   ACTIVE_STATUSES,
   acceptMarketplaceOrder,
@@ -26,6 +27,8 @@ import {
   MarketplaceOrder,
   rejectMarketplaceOrder,
 } from '../../../src/services/integration/marketplaceOrders';
+import { getMarketplaceMetrics } from '../../../src/services/integration/marketplaceOrders';
+import { getLogisticsDashboard } from '../../../src/services/logistics';
 import { retryMarketplaceSync } from '../../../src/services/integration/marketplaceSync';
 
 const FILTERS: { key: MarketplaceFilter; label: string }[] = [
@@ -46,7 +49,7 @@ type ReasonAction = { kind: 'reject' | 'fail'; order: MarketplaceOrder };
 
 const humanize = (s?: string | null) => (s || 'PENDING').replace(/_/g, ' ');
 
-export default function MarketplaceOrdersScreen() {
+export default function OperationsAndOrdersScreen() {
   const params = useLocalSearchParams<{ filter?: string }>();
   const initial = FILTERS.some((f) => f.key === params.filter) ? (params.filter as MarketplaceFilter) : 'ALL';
 
@@ -58,6 +61,37 @@ export default function MarketplaceOrdersScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [reasonAction, setReasonAction] = useState<ReasonAction | null>(null);
   const [reason, setReason] = useState('');
+
+  // Combined KPI state
+  const [kpis, setKpis] = useState({
+    incoming: 0,
+    newOrders: 0,
+    awaitingPickup: 0,
+    outForDelivery: 0,
+    deliveredToday: 0,
+  });
+  const [kpisLoading, setKpisLoading] = useState(true);
+
+  const loadKpis = async () => {
+    setKpisLoading(true);
+    try {
+      const [logistics, marketplace] = await Promise.all([
+        getLogisticsDashboard(),
+        getMarketplaceMetrics(),
+      ]);
+      setKpis({
+        incoming: logistics.kpis.incomingOrders || 0,
+        newOrders: marketplace.newOrders || 0,
+        awaitingPickup: logistics.kpis.awaitingPickup || 0,
+        outForDelivery: logistics.kpis.outForDelivery || 0,
+        deliveredToday: logistics.kpis.deliveredToday || 0,
+      });
+    } catch (e) {
+      console.warn('Failed to load summary KPIs:', e);
+    } finally {
+      setKpisLoading(false);
+    }
+  };
 
   const load = useCallback(async (f: MarketplaceFilter) => {
     setError('');
@@ -75,6 +109,7 @@ export default function MarketplaceOrdersScreen() {
   useFocusEffect(
     useCallback(() => {
       load(filter);
+      loadKpis();
     }, [filter, load])
   );
 
@@ -127,7 +162,7 @@ export default function MarketplaceOrdersScreen() {
     if (status === 'PENDING' && o.marketplace_intake_status !== 'REJECTED') {
       buttons.push(
         <ActionButton key="assign" label="Assign Driver & Vehicle" icon="car" disabled={busy}
-          onPress={() => router.push(`/logistics/workspace/${o.id}` as any)} />,
+          onPress={() => router.push(\`/logistics/workspace/\${o.id}\` as any)} />,
         <ActionButton key="reject" label="Reject" icon="close" tone="danger" disabled={busy}
           onPress={() => setReasonAction({ kind: 'reject', order: o })} />
       );
@@ -135,7 +170,7 @@ export default function MarketplaceOrdersScreen() {
     if (ACTIVE_STATUSES.includes(status)) {
       buttons.push(
         <ActionButton key="track" label="Timeline" icon="list" disabled={busy}
-          onPress={() => router.push(`/deliveries/${o.id}` as any)} />,
+          onPress={() => router.push(\`/deliveries/\${o.id}\` as any)} />,
         <ActionButton key="fail" label="Mark Failed" icon="alert-circle" tone="danger" disabled={busy}
           onPress={() => setReasonAction({ kind: 'fail', order: o })} />
       );
@@ -169,121 +204,145 @@ export default function MarketplaceOrdersScreen() {
             <Ionicons name="arrow-back" size={24} color={Colors.primaryDark} />
           </TouchableOpacity>
           <View>
-            <Text style={styles.headerTitle}>Marketplace Orders</Text>
-            <Text style={styles.headerSubtitle}>From Farm Marketplace</Text>
+            <Text style={styles.headerTitle}>Operations & Orders</Text>
+            <Text style={styles.headerSubtitle}>Unified Logistics Control</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={() => { setRefreshing(true); load(filter); }}>
+        <TouchableOpacity onPress={() => { setRefreshing(true); load(filter); loadKpis(); }}>
           <Ionicons name="refresh" size={22} color={Colors.primary} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.controls}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {FILTERS.map((f) => (
-            <TouchableOpacity
-              key={f.key}
-              style={[styles.filterChip, filter === f.key && styles.filterChipSelected]}
-              onPress={() => changeFilter(f.key)}
-            >
-              <Text style={[styles.filterChipText, filter === f.key && styles.filterChipTextSelected]}>{f.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-        </View>
-      ) : error ? (
-        <View style={styles.center}>
-          <Ionicons name="alert-circle-outline" size={48} color={Colors.error} />
-          <Text style={styles.emptyText}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => load(filter)}>
-            <Text style={styles.retryBtnText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(filter); }} />}
-        >
-          {orders.length === 0 ? (
-            <View style={styles.center}>
-              <Ionicons name="storefront-outline" size={48} color={Colors.textLight} />
-              <Text style={styles.emptyText}>No marketplace orders here yet.</Text>
-            </View>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(filter); loadKpis(); }} />}
+      >
+        {/* Unified KPI Section */}
+        <View style={styles.kpiSection}>
+          <Text style={styles.sectionTitle}>Operational Summary</Text>
+          {kpisLoading ? (
+            <ActivityIndicator size="small" color={Colors.primary} />
           ) : (
-            orders.map((o) => (
-              <TouchableOpacity key={o.id} style={styles.card} onPress={() => router.push(`/deliveries/${o.id}` as any)}>
-                <View style={styles.cardHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.orderId}>{o.order_number}</Text>
-                    {o.marketplace_intake_status === 'NEW' && o.logistics_status === 'PENDING' ? (
-                      <Text style={styles.newTag}>NEW</Text>
-                    ) : null}
+            <>
+              <View style={styles.kpiRow}>
+                <SummaryCard title="Incoming" value={kpis.incoming} icon="cube" color={Colors.primary} onPress={() => router.push('/orders')} />
+                <SummaryCard title="New Orders" value={kpis.newOrders} icon="storefront" color={Colors.primary} onPress={() => changeFilter('PENDING')} />
+              </View>
+              <View style={styles.kpiRow}>
+                <SummaryCard title="Awaiting Pickup" value={kpis.awaitingPickup} icon="time" color={Colors.warning} onPress={() => changeFilter('PICKUP_ASSIGNED')} />
+                <SummaryCard title="Out for Delivery" value={kpis.outForDelivery} icon="bicycle" color={Colors.primaryDark} onPress={() => changeFilter('IN_TRANSIT')} />
+              </View>
+              <View style={styles.kpiRow}>
+                <SummaryCard title="Delivered Today" value={kpis.deliveredToday} icon="checkmark-circle" color={Colors.success} onPress={() => changeFilter('DELIVERED')} />
+              </View>
+            </>
+          )}
+        </View>
+
+        <View style={styles.controls}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {FILTERS.map((f) => (
+              <TouchableOpacity
+                key={f.key}
+                style={[styles.filterChip, filter === f.key && styles.filterChipSelected]}
+                onPress={() => changeFilter(f.key)}
+              >
+                <Text style={[styles.filterChipText, filter === f.key && styles.filterChipTextSelected]}>{f.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+          </View>
+        ) : error ? (
+          <View style={styles.center}>
+            <Ionicons name="alert-circle-outline" size={48} color={Colors.error} />
+            <Text style={styles.emptyText}>{error}</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={() => load(filter)}>
+              <Text style={styles.retryBtnText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.list}>
+            {orders.length === 0 ? (
+              <View style={styles.center}>
+                <Ionicons name="storefront-outline" size={48} color={Colors.textLight} />
+                <Text style={styles.emptyText}>No marketplace orders here yet.</Text>
+              </View>
+            ) : (
+              orders.map((o) => (
+                <TouchableOpacity key={o.id} style={styles.card} onPress={() => router.push(\`/deliveries/\${o.id}\` as any)}>
+                  <View style={styles.cardHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.orderId}>{o.order_number}</Text>
+                      {o.marketplace_intake_status === 'NEW' && o.logistics_status === 'PENDING' ? (
+                        <Text style={styles.newTag}>NEW</Text>
+                      ) : null}
+                    </View>
+                    <StatusBadge status={humanize(o.logistics_status)} />
                   </View>
-                  <StatusBadge status={humanize(o.logistics_status)} />
-                </View>
 
-                <Text style={styles.productName} numberOfLines={2}>{o.product}</Text>
+                  <Text style={styles.productName} numberOfLines={2}>{o.product}</Text>
 
-                <View style={styles.row}>
-                  <Ionicons name="leaf-outline" size={14} color={Colors.textSecondary} />
-                  <Text style={styles.rowText} numberOfLines={2}>
-                    Pickup (farmer): {o.pickup_contact_name || '—'}{o.pickup_contact_phone ? ` · ${o.pickup_contact_phone}` : ''}
-                    {o.pickup_address ? `\n${o.pickup_address}` : ''}
-                  </Text>
-                </View>
-                <View style={styles.row}>
-                  <Ionicons name="location-outline" size={14} color={Colors.textSecondary} />
-                  <Text style={styles.rowText} numberOfLines={2}>
-                    Drop (buyer): {o.drop_contact_name || '—'}{o.drop_contact_phone ? ` · ${o.drop_contact_phone}` : ''}
-                    {o.delivery_location ? `\n${o.delivery_location}` : ''}
-                  </Text>
-                </View>
-                {o.notes ? (
                   <View style={styles.row}>
-                    <Ionicons name="information-circle-outline" size={14} color={Colors.textSecondary} />
-                    <Text style={styles.rowText} numberOfLines={2}>Instructions: {o.notes}</Text>
-                  </View>
-                ) : null}
-
-                <View style={styles.tags}>
-                  <View style={[styles.tag, { backgroundColor: (PRIORITY_COLORS[o.priority || 'NORMAL'] || Colors.success) + '20' }]}>
-                    <Text style={[styles.tagText, { color: PRIORITY_COLORS[o.priority || 'NORMAL'] || Colors.success }]}>
-                      {o.priority || 'NORMAL'} PRIORITY
+                    <Ionicons name="leaf-outline" size={14} color={Colors.textSecondary} />
+                    <Text style={styles.rowText} numberOfLines={2}>
+                      Pickup (farmer): {o.pickup_contact_name || '—'}{o.pickup_contact_phone ? \` · \${o.pickup_contact_phone}\` : ''}
+                      {o.pickup_address ? \`\\n\${o.pickup_address}\` : ''}
                     </Text>
                   </View>
-                  {o.is_perishable ? (
-                    <View style={[styles.tag, { backgroundColor: '#FFEDD5' }]}><Text style={[styles.tagText, { color: '#C2410C' }]}>Perishable</Text></View>
+                  <View style={styles.row}>
+                    <Ionicons name="location-outline" size={14} color={Colors.textSecondary} />
+                    <Text style={styles.rowText} numberOfLines={2}>
+                      Drop (buyer): {o.drop_contact_name || '—'}{o.drop_contact_phone ? \` · \${o.drop_contact_phone}\` : ''}
+                      {o.delivery_location ? \`\\n\${o.delivery_location}\` : ''}
+                    </Text>
+                  </View>
+                  {o.notes ? (
+                    <View style={styles.row}>
+                      <Ionicons name="information-circle-outline" size={14} color={Colors.textSecondary} />
+                      <Text style={styles.rowText} numberOfLines={2}>Instructions: {o.notes}</Text>
+                    </View>
                   ) : null}
-                </View>
 
-                <View style={styles.syncRow}>
-                  <Ionicons
-                    name={o.marketplace_sync_status === 'FAILED' ? 'cloud-offline-outline' : o.marketplace_sync_status === 'PENDING' ? 'cloud-upload-outline' : 'cloud-done-outline'}
-                    size={14}
-                    color={o.marketplace_sync_status === 'FAILED' ? Colors.error : Colors.textLight}
-                  />
-                  <Text style={[styles.syncText, o.marketplace_sync_status === 'FAILED' && { color: Colors.error }]} numberOfLines={2}>
-                    {o.marketplace_sync_status === 'FAILED'
-                      ? `Sync failed: ${o.marketplace_last_error || 'unknown error'}`
-                      : o.marketplace_sync_status === 'PENDING'
-                        ? 'Sending update to marketplace…'
-                        : o.marketplace_last_synced_at
-                          ? `Synced ${new Date(o.marketplace_last_synced_at).toLocaleString()}`
-                          : 'Synced'}
-                  </Text>
-                </View>
+                  <View style={styles.tags}>
+                    <View style={[styles.tag, { backgroundColor: (PRIORITY_COLORS[o.priority || 'NORMAL'] || Colors.success) + '20' }]}>
+                      <Text style={[styles.tagText, { color: PRIORITY_COLORS[o.priority || 'NORMAL'] || Colors.success }]}>
+                        {o.priority || 'NORMAL'} PRIORITY
+                      </Text>
+                    </View>
+                    {o.is_perishable ? (
+                      <View style={[styles.tag, { backgroundColor: '#FFEDD5' }]}><Text style={[styles.tagText, { color: '#C2410C' }]}>Perishable</Text></View>
+                    </View>
+                  </View>
 
-                {renderActions(o)}
-              </TouchableOpacity>
-            ))
-          )}
-        </ScrollView>
-      )}
+                  <View style={styles.syncRow}>
+                    <Ionicons
+                      name={o.marketplace_sync_status === 'FAILED' ? 'cloud-offline-outline' : o.marketplace_sync_status === 'PENDING' ? 'cloud-upload-outline' : 'cloud-done-outline'}
+                      size={14}
+                      color={o.marketplace_sync_status === 'FAILED' ? Colors.error : Colors.textLight}
+                    />
+                    <Text style={[styles.syncText, o.marketplace_sync_status === 'FAILED' && { color: Colors.error }]} numberOfLines={2}>
+                      {o.marketplace_sync_status === 'FAILED'
+                        ? \`Sync failed: \${o.marketplace_last_error || 'unknown error'}\`
+                        : o.marketplace_sync_status === 'PENDING'
+                          ? 'Sending update to marketplace…'
+                          : o.marketplace_last_synced_at
+                            ? \`Synced \${new Date(o.marketplace_last_synced_at).toLocaleString()}\`
+                            : 'Synced'}
+                    </Text>
+                  </View>
+
+                  {renderActions(o)}
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+        )}
+      </ScrollView>
 
       <Modal visible={!!reasonAction} transparent animationType="fade" onRequestClose={() => setReasonAction(null)}>
         <View style={styles.modalBackdrop}>
@@ -351,6 +410,10 @@ const styles = StyleSheet.create({
   backBtn: { marginRight: 16 },
   headerTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.primaryDark },
   headerSubtitle: { fontSize: 12, color: Colors.textSecondary },
+
+  kpiSection: { padding: 16, marginBottom: 8 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: Colors.text, marginBottom: 12, paddingHorizontal: 4 },
+  kpiRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
 
   controls: { backgroundColor: Colors.surface, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
   filterChip: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background, marginRight: 8 },

@@ -121,46 +121,22 @@ export default function AgentDashboard() {
               </TouchableOpacity>
             )}
 
-            {/* KPI Cards Section */}
+            {/* Operations & Orders Teaser */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Operations Overview</Text>
-              <View style={styles.kpiGrid}>
-                <SummaryCard title="Incoming" value={kpis.incomingOrders} icon="cube" color={Colors.primary} onPress={() => router.push('/orders')} />
-                <SummaryCard title="Awaiting Pickup" value={kpis.awaitingPickup} icon="time" color={Colors.warning} onPress={() => router.push('/deliveries')} />
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>Operations & Orders</Text>
+                <TouchableOpacity onPress={() => router.push('/marketplace')}>
+                  <Text style={styles.seeAll}>View All Operations</Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.kpiGrid}>
-                <SummaryCard title="In Transit" value={kpis.inTransit} icon="map" color={Colors.info} onPress={() => router.push('/logistics/map')} />
-                <SummaryCard title="Out for Delivery" value={kpis.outForDelivery} icon="bicycle" color={Colors.primaryDark} onPress={() => router.push('/deliveries')} />
-              </View>
-              <View style={styles.kpiGrid}>
-                <SummaryCard title="Delivered Today" value={kpis.deliveredToday} icon="checkmark-circle" color={Colors.success} onPress={() => {}} />
-                <SummaryCard title="Available Partners" value={kpis.availablePartners} icon="people" color={Colors.success} onPress={() => router.push('/delivery-partners')} />
-              </View>
+              <TouchableOpacity
+                style={styles.mapTeaser}
+                onPress={() => router.push('/marketplace')}
+              >
+                <Text style={{color: 'white', fontWeight: 'bold', fontSize: 16}}>Manage Logistics & Orders</Text>
+                <Text style={{color: 'rgba(255,255,255,0.7)', marginTop: 4}}>View incoming, pending, and active deliveries</Text>
+              </TouchableOpacity>
             </View>
-
-            {/* Farm Marketplace orders */}
-            {marketplace && (
-              <View style={styles.section}>
-                <View style={styles.sectionHeaderRow}>
-                  <Text style={styles.sectionTitle}>Marketplace Orders</Text>
-                  <TouchableOpacity onPress={() => router.push('/marketplace' as any)}>
-                    <Text style={styles.seeAll}>Open</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.kpiGrid}>
-                  <SummaryCard title="New Orders" value={marketplace.newOrders} icon="storefront" color={Colors.primary} onPress={() => router.push('/marketplace?filter=PENDING' as any)} />
-                  <SummaryCard title="Assigned" value={marketplace.assigned} icon="person" color={Colors.info} onPress={() => router.push('/marketplace?filter=PICKUP_ASSIGNED' as any)} />
-                </View>
-                <View style={styles.kpiGrid}>
-                  <SummaryCard title="Awaiting Pickup" value={marketplace.awaitingPickup} icon="time" color={Colors.warning} onPress={() => router.push('/marketplace?filter=PICKUP_ASSIGNED' as any)} />
-                  <SummaryCard title="In Transit" value={marketplace.inTransit} icon="car" color={Colors.primaryDark} onPress={() => router.push('/marketplace?filter=IN_TRANSIT' as any)} />
-                </View>
-                <View style={styles.kpiGrid}>
-                  <SummaryCard title="Delivered" value={marketplace.delivered} icon="checkmark-done" color={Colors.success} onPress={() => router.push('/marketplace?filter=DELIVERED' as any)} />
-                  <SummaryCard title="Sync Failed" value={marketplace.syncFailed} icon="sync" color={marketplace.syncFailed > 0 ? Colors.error : Colors.textSecondary} onPress={() => router.push('/marketplace' as any)} />
-                </View>
-              </View>
-            )}
 
             {/* Live Operations Map Teaser */}
             <View style={styles.section}>
