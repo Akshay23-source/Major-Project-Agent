@@ -1,8 +1,12 @@
 # Agri Agent 🌾
 
 Agri Agent is a React Native (Expo) app for agricultural agents and their delivery partners:
-it manages marketplace deliveries, drivers, the vehicle fleet, live GPS tracking, and the agent's
-own farmers, buyers, produce stock and payments. It is the logistics partner of **Farm Marketplace**.
+it manages marketplace deliveries, drivers, the vehicle fleet, live GPS tracking, and acts as the unified logistics control center for **Farm Marketplace**.
+
+### Recent UI Updates
+* **Unified Dashboard**: The Operations Overview and Marketplace Orders have been consolidated into a single "Operations & Orders" screen for better agent workflow.
+* **Streamlined Navigation**: The sidebar has been cleaned up to focus solely on logistics (Orders, Delivery Partners, Tracking, Reports).
+* **Header Actions**: Quick access to Settings is now available directly in the top app header.
 
 ## 🏗️ Architecture
 

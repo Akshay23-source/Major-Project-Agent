@@ -13,21 +13,12 @@ const IS_MOBILE = SCREEN_WIDTH < 768;
 const SIDEBAR_WIDTH = 280;
 
 const NAV_ITEMS = [
-  { nameKey: 'navigation.dashboard', fallback: 'Dashboard', route: '/dashboard', icon: 'grid-outline' },
+  { nameKey: 'navigation.dashboard', fallback: 'Operations & Orders', route: '/dashboard', icon: 'grid-outline' },
   { nameKey: 'navigation.orders', fallback: 'Orders', route: '/orders', icon: 'cart-outline' },
-  { nameKey: 'navigation.marketplaceOrders', fallback: 'Marketplace Orders', route: '/marketplace', icon: 'storefront-outline' },
-  { nameKey: 'navigation.farmers', fallback: 'Farmers', route: '/farmers', icon: 'leaf-outline' },
-  { nameKey: 'navigation.buyers', fallback: 'Buyers', route: '/buyers', icon: 'business-outline' },
-  { nameKey: 'navigation.employees', fallback: 'Employees', route: '/employees', icon: 'people-outline' },
   { nameKey: 'navigation.deliveryPartners', fallback: 'Delivery Partners', route: '/delivery-partners', icon: 'bicycle' },
-  { nameKey: 'navigation.vehicles', fallback: 'Vehicles & Transport', route: '/fleet', icon: 'car-outline' },
   { nameKey: 'navigation.liveTracking', fallback: 'Live Tracking', route: '/logistics/map', icon: 'map-outline' },
-  { nameKey: 'navigation.products', fallback: 'Products', route: '/products', icon: 'cube-outline' },
-  { nameKey: 'navigation.payments', fallback: 'Payments', route: '/payments', icon: 'card-outline' },
-  { nameKey: 'navigation.earnings', fallback: 'Earnings', route: '/earnings', icon: 'cash-outline' },
   { nameKey: 'navigation.reports', fallback: 'Reports', route: '/reports', icon: 'bar-chart-outline' },
   { nameKey: 'navigation.notifications', fallback: 'Notifications', route: '/notifications', icon: 'notifications-outline' },
-  { nameKey: 'navigation.disputes', fallback: 'Disputes', route: '/disputes', icon: 'warning-outline' },
   { nameKey: 'navigation.settings', fallback: 'Settings', route: '/settings', icon: 'settings-outline' },
 ];
 

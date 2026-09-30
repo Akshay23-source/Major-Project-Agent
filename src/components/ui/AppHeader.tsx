@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { useSidebar } from '../../providers/SidebarProvider';
+import { useRouter } from 'expo-router';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IS_MOBILE = SCREEN_WIDTH < 768;
@@ -23,6 +24,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   unreadCount = 0
 }) => {
   const { toggleSidebar } = useSidebar();
+  const router = useRouter();
 
   return (
     <View style={styles.header}>
@@ -44,6 +46,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
             </View>
           )}
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.iconButton, { marginLeft: 12 }]} onPress={() => router.push('/settings')}>
+          <Ionicons name="settings-outline" size={24} color={Colors.primaryDark} />
         </TouchableOpacity>
         <TouchableOpacity style={[styles.iconButton, { marginLeft: 12 }]} onPress={onProfilePress}>
           <Ionicons name="person-circle-outline" size={28} color={Colors.primaryDark} />
