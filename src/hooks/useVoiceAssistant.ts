@@ -9,17 +9,30 @@ export const useVoiceAssistant = () => {
   const [assistantResponse, setAssistantResponse] = useState<string>('');
   const [pendingAction, setPendingAction] = useState<VoiceIntent | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState<boolean>(false);
 
   const { locale } = useLocalization();
 
   useEffect(() => {
     voiceService.init({
       languageCode: locale,
-      onStateChange: setState,
+      onStateChange: (newState) => {
+        setState(newState);
+        if (newState !== 'IDLE') {
+          setIsOpen(true);
+        } else {
+          setTimeout(() => {
+            setIsOpen(false);
+          }, 1200);
+        }
+      },
       onTranscriptUpdate: setTranscript,
       onAssistantResponse: setAssistantResponse,
       onActionRequired: setPendingAction,
-      onError: setError
+      onError: (err) => {
+        setError(err);
+        setIsOpen(true);
+      }
     });
   }, [locale]);
 
@@ -28,6 +41,7 @@ export const useVoiceAssistant = () => {
     setTranscript('');
     setAssistantResponse('');
     setPendingAction(null);
+    setIsOpen(true);
     await voiceService.startInteraction();
   }, []);
 
@@ -36,6 +50,12 @@ export const useVoiceAssistant = () => {
   }, []);
 
   const cancel = useCallback(async () => {
+    setIsOpen(false);
+    setTranscript('');
+    setAssistantResponse('');
+    setPendingAction(null);
+    setError(null);
+    setState('IDLE');
     await voiceService.cancel();
   }, []);
 
@@ -53,6 +73,7 @@ export const useVoiceAssistant = () => {
   }, []);
 
   return {
+    isOpen,
     state,
     transcript,
     assistantResponse,

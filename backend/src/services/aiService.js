@@ -126,14 +126,24 @@ const chat = async (agentId, inputMessages) => {
   return { reply: message.content, proposedAction };
 };
 
-const transcribe = async (audioBase64) => {
+const transcribe = async (audioBase64, languageCode) => {
   if (!env.sarvamApiKey) throw new HttpError(503, 'Speech service is not configured. SARVAM_API_KEY is missing.');
   if (typeof audioBase64 !== 'string' || !audioBase64) throw badRequest('audioData is required');
 
   const bytes = Buffer.from(audioBase64, 'base64');
+  let mimeType = 'audio/x-m4a';
+  let filename = 'audio.m4a';
+  if (bytes.length > 4 && bytes.slice(0, 4).toString('ascii') === 'RIFF') {
+    mimeType = 'audio/wav';
+    filename = 'audio.wav';
+  } else if (bytes.length > 3 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) {
+    mimeType = 'audio/mpeg';
+    filename = 'audio.mp3';
+  }
+
   const form = new FormData();
-  form.append('file', new Blob([bytes], { type: 'audio/m4a' }), 'audio.m4a');
-  form.append('model', 'saaras:v1');
+  form.append('file', new Blob([bytes], { type: mimeType }), filename);
+  form.append('model', 'saaras:v3');
 
   const res = await fetch('https://api.sarvam.ai/speech-to-text-translate', {
     method: 'POST',
@@ -142,11 +152,15 @@ const transcribe = async (audioBase64) => {
     signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) {
-    console.error(`[ai] Sarvam error ${res.status}`);
+    const errorBody = await res.text().catch(() => '');
+    console.error(`[ai] Sarvam error ${res.status}:`, errorBody);
     throw new HttpError(502, 'Failed to transcribe audio.');
   }
   const result = await res.json();
-  return { transcription: result.transcript || '' };
+  return { 
+    transcription: result.transcript || '',
+    detectedLanguage: result.language_code || 'en-IN'
+  };
 };
 
 module.exports = { chat, transcribe };

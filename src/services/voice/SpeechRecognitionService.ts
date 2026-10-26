@@ -7,9 +7,16 @@ class ExpoAudioSTTService implements STTProvider {
   isListening: boolean = false;
   private recording: any | null = null;
   private onPartialResultCallback?: (text: string) => void;
+  private currentLanguageCode: string = 'en';
+  private lastDetectedLanguage: string = 'en';
+
+  getLastDetectedLanguage(): string {
+    return this.lastDetectedLanguage;
+  }
 
   async startListening(languageCode: string, onPartialResult?: (text: string) => void): Promise<void> {
     try {
+      this.currentLanguageCode = languageCode || 'en';
       this.onPartialResultCallback = onPartialResult;
       
       const permission = await requestRecordingPermissionsAsync();
@@ -74,12 +81,19 @@ class ExpoAudioSTTService implements STTProvider {
       });
 
       // The Agri Agent backend holds the Sarvam API key server-side
-      let data: { transcription?: string };
+      let data: { transcription?: string; detectedLanguage?: string };
       try {
-        data = await api.post<{ transcription?: string }>('/ai/transcribe', { audioData: base64Audio });
+        data = await api.post<{ transcription?: string; detectedLanguage?: string }>('/ai/transcribe', { 
+          audioData: base64Audio,
+          languageCode: this.currentLanguageCode 
+        });
       } catch (err: any) {
         console.error("STT Error:", err?.message);
-        throw new Error("Voice service is temporarily unavailable. Please try again.");
+        throw new Error(err?.message || "Voice service is temporarily unavailable. Please try again.");
+      }
+
+      if (data?.detectedLanguage) {
+        this.lastDetectedLanguage = data.detectedLanguage;
       }
 
       return data?.transcription || '';

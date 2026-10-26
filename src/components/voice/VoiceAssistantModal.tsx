@@ -1,9 +1,10 @@
-import React from 'react';
-import { Modal, View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import { Modal, View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, TouchableWithoutFeedback } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalization } from '../../hooks/useLocalization';
 import { VoiceState } from '../../services/voice/VoiceService';
 import { VoiceIntent } from '../../services/voice/VoiceProvider';
+import { LanguageSelector } from './LanguageSelector';
 
 interface VoiceAssistantModalProps {
   visible: boolean;
@@ -32,7 +33,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   onConfirmAction,
   onCancelAction,
 }) => {
-  const { t } = useLocalization();
+  const { t, currentLanguage } = useLocalization();
+  const [langModalVisible, setLangModalVisible] = useState(false);
 
   const getStatusText = () => {
     switch (state) {
@@ -52,15 +54,36 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
-        <View style={styles.container}>
-          
-          <View style={styles.header}>
-            <Text style={styles.title}>AgriAgent AI</Text>
-            <TouchableOpacity onPress={onCancel} style={styles.closeButton}>
-              <MaterialCommunityIcons name="close" size={24} color="#6B7280" />
-            </TouchableOpacity>
-          </View>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.overlay}>
+          <TouchableWithoutFeedback>
+            <View style={styles.container}>
+              
+              <View style={styles.header}>
+                <View style={styles.titleRow}>
+                  <Text style={styles.title}>AgriAgent AI</Text>
+                  <TouchableOpacity 
+                    style={styles.langBadge} 
+                    onPress={() => setLangModalVisible(true)}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialCommunityIcons name="translate" size={15} color="#059669" />
+                    <Text style={styles.langBadgeText}>{currentLanguage?.nativeName || 'English'}</Text>
+                    <MaterialCommunityIcons name="chevron-down" size={14} color="#059669" />
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity 
+                  onPress={() => {
+                    onCancel?.();
+                    onClose?.();
+                  }} 
+                  style={styles.closeButton}
+                  hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                  activeOpacity={0.6}
+                >
+                  <MaterialCommunityIcons name="close" size={26} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
 
           <View style={styles.content}>
             <Text style={styles.status}>{getStatusText()}</Text>
@@ -114,8 +137,14 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
           </View>
 
+            </View>
+          </TouchableWithoutFeedback>
         </View>
-      </View>
+      </TouchableWithoutFeedback>
+      <LanguageSelector
+        visible={langModalVisible}
+        onClose={() => setLangModalVisible(false)}
+      />
     </Modal>
   );
 };
@@ -140,10 +169,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   title: {
     fontSize: 20,
     fontWeight: '700',
     color: '#111827',
+  },
+  langBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    gap: 4,
+  },
+  langBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#065F46',
   },
   closeButton: {
     padding: 4,

@@ -57,6 +57,6 @@ module.exports = {
 
   ai: {
     chat: async (req, res) => res.json(await ai.chat(a(req), req.body?.messages)),
-    transcribe: async (req, res) => res.json(await ai.transcribe(req.body?.audioData)),
+    transcribe: async (req, res) => res.json(await ai.transcribe(req.body?.audioData, req.body?.languageCode)),
   },
 };

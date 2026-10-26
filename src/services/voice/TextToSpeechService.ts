@@ -7,8 +7,9 @@ class ExpoTextToSpeechService implements TTSProvider {
   async speak(text: string, languageCode: string, onDone?: () => void, onError?: (error: any) => void): Promise<void> {
     try {
       this.isSpeaking = true;
+      const normalizedLanguage = languageCode ? (languageCode.includes('-') ? languageCode : `${languageCode}-IN`) : 'en-IN';
       Speech.speak(text, {
-        language: languageCode,
+        language: normalizedLanguage,
         onDone: () => {
           this.isSpeaking = false;
           if (onDone) onDone();

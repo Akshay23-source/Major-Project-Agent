@@ -7,6 +7,7 @@ import { useVoiceAssistant } from "../../src/hooks/useVoiceAssistant";
 
 export default function AgentLayout() {
   const {
+    isOpen,
     state,
     transcript,
     assistantResponse,
@@ -32,9 +33,9 @@ export default function AgentLayout() {
           onPress={startListening} 
           isListening={state === 'LISTENING'} 
         />
-        {(state !== 'IDLE' || transcript !== '') && (
+        {isOpen && (
           <VoiceAssistantModal
-            visible={true}
+            visible={isOpen}
             state={state}
             transcript={transcript}
             assistantResponse={assistantResponse}
