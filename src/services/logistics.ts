@@ -28,6 +28,16 @@ export interface DeliveryPartner {
   completed_deliveries: number;
   failed_deliveries: number;
   last_active_at?: string;
+  created_at?: string;
+  current_assignment?: {
+    delivery_id: string;
+    delivery_number?: string;
+    status: string;
+    logistics_tracking_status?: string;
+    order_number: string;
+    product: string;
+    accepted_at?: string;
+  } | null;
 }
 
 export interface Vehicle {

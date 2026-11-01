@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Colors } from "../../../src/theme/colors";
 import { getDeliveryDetails, transitionDriverStatus, DriverDeliveryStatus } from "../../../src/services/driver/deliveries";
+import { startLocationTracking, stopLocationTracking } from "../../../src/services/driver/locationTracking";
 import { useLocalization } from "../../../src/hooks/useLocalization";
 import * as Linking from "expo-linking";
 
@@ -35,6 +36,19 @@ export default function DeliveryDetailsScreen() {
   useEffect(() => {
     if (id) loadData();
   }, [id]);
+
+  // Start GPS tracking automatically if this delivery is already in an active state
+  useEffect(() => {
+    if (!delivery) return;
+    const activeStatuses = ['PICKED_UP', 'IN_TRANSIT', 'ARRIVED_AT_DESTINATION', 'OUT_FOR_DELIVERY'];
+    if (activeStatuses.includes(delivery.logistics_tracking_status)) {
+      startLocationTracking(id);
+    }
+    // Stop tracking when this screen unmounts (delivery completed or navigated away)
+    return () => {
+      stopLocationTracking();
+    };
+  }, [delivery?.logistics_tracking_status]);
 
   const loadData = async () => {
     setLoading(true);
@@ -57,17 +71,17 @@ export default function DeliveryDetailsScreen() {
     let label = "";
 
     switch (status) {
-      case 'ASSIGNED': nextStatus = 'ACCEPTED'; label = t('driver.accepted'); break;
-      case 'ACCEPTED': nextStatus = 'DRIVER_EN_ROUTE'; label = t('driver.enRoute'); break;
-      case 'DRIVER_EN_ROUTE': nextStatus = 'ARRIVED_AT_FARM'; label = t('driver.arrivedAtFarm'); break;
-      case 'ARRIVED_AT_FARM': nextStatus = 'PICKED_UP'; label = t('driver.pickedUp'); break;
-      case 'PICKED_UP': nextStatus = 'IN_TRANSIT'; label = t('driver.inTransit'); break;
-      case 'IN_TRANSIT': nextStatus = 'ARRIVED_AT_DESTINATION'; label = t('driver.arrivedAtDestination'); break;
+      case 'ASSIGNED': nextStatus = 'ACCEPTED'; label = t('driver.accepted') || 'Accept'; break;
+      case 'ACCEPTED': nextStatus = 'DRIVER_EN_ROUTE'; label = t('driver.enRoute') || 'En Route to Farm'; break;
+      case 'DRIVER_EN_ROUTE': nextStatus = 'ARRIVED_AT_FARM'; label = t('driver.arrivedAtFarm') || 'Arrived at Farm'; break;
+      case 'ARRIVED_AT_FARM': nextStatus = 'PICKED_UP'; label = t('driver.pickedUp') || 'Picked Up'; break;
+      case 'PICKED_UP': nextStatus = 'IN_TRANSIT'; label = t('driver.inTransit') || 'In Transit'; break;
+      case 'IN_TRANSIT': nextStatus = 'ARRIVED_AT_DESTINATION'; label = t('driver.arrivedAtDestination') || 'Arrived at Destination'; break;
       case 'ARRIVED_AT_DESTINATION': nextStatus = 'OUT_FOR_DELIVERY'; label = "Out for Delivery"; break;
       case 'OUT_FOR_DELIVERY': 
         return (
           <TouchableOpacity style={styles.actionButton} onPress={() => setPodVisible(true)}>
-            <Text style={styles.actionButtonText}>{t('driver.delivered')}</Text>
+            <Text style={styles.actionButtonText}>{t('driver.delivered') || 'Confirm Delivery'}</Text>
           </TouchableOpacity>
         );
       case 'DELIVERED':
@@ -101,6 +115,17 @@ export default function DeliveryDetailsScreen() {
     try {
       await transitionDriverStatus(id, delivery.logistics_tracking_status, newStatus, notes);
       await loadData();
+      if (newStatus === 'ACCEPTED') {
+        Alert.alert("Order Accepted", "You have accepted this delivery assignment.");
+      } else if (newStatus === 'PICKED_UP') {
+        // Start real GPS tracking after pickup confirmation
+        startLocationTracking(id);
+        Alert.alert("Pickup Confirmed", "Goods picked up successfully. Live GPS tracking has started.");
+      } else if (newStatus === 'DELIVERED') {
+        // Stop GPS tracking on delivery
+        stopLocationTracking();
+        Alert.alert("Delivery Successful", "Order delivered successfully. Customer verification is now pending.");
+      }
     } catch (error: any) {
       Alert.alert("Error", error.message);
     } finally {

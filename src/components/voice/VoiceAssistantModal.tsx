@@ -18,6 +18,7 @@ interface VoiceAssistantModalProps {
   onCancel: () => void;
   onConfirmAction: () => void;
   onCancelAction: () => void;
+  onSendCommand?: (command: string) => void;
 }
 
 export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
@@ -32,6 +33,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   onCancel,
   onConfirmAction,
   onCancelAction,
+  onSendCommand,
 }) => {
   const { t, currentLanguage } = useLocalization();
   const [langModalVisible, setLangModalVisible] = useState(false);
@@ -94,6 +96,28 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                 <TouchableOpacity onPress={onStopListening} style={styles.stopListenBtn}>
                   <Text style={styles.stopListenText}>Done Speaking</Text>
                 </TouchableOpacity>
+
+                <View style={styles.suggestionsRow}>
+                  <Text style={styles.suggestionsLabel}>Try saying or tap:</Text>
+                  <View style={styles.chipsWrap}>
+                    {[
+                      { label: "📦 Orders", cmd: "open orders" },
+                      { label: "🌾 Farmers", cmd: "show farmers" },
+                      { label: "🚚 Deliveries", cmd: "open deliveries" },
+                      { label: "🗺️ Live Tracking", cmd: "track driver" },
+                      { label: "🔔 Notifications", cmd: "open notifications" },
+                      { label: "📊 Dashboard", cmd: "open dashboard" },
+                    ].map((item, idx) => (
+                      <TouchableOpacity
+                        key={idx}
+                        style={styles.chip}
+                        onPress={() => onSendCommand?.(item.cmd)}
+                      >
+                        <Text style={styles.chipText}>{item.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
               </View>
             )}
 
@@ -304,5 +328,37 @@ const styles = StyleSheet.create({
   confirmBtnText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  suggestionsRow: {
+    marginTop: 18,
+    width: '100%',
+    alignItems: 'center',
+  },
+  suggestionsLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  chipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  chip: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  chipText: {
+    fontSize: 13,
+    color: '#374151',
+    fontWeight: '500',
   },
 });

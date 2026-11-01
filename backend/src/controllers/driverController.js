@@ -40,6 +40,12 @@ const deliveries = async (req, res) => {
   res.json(await driverDeliveries.list(req.user.id, filter));
 };
 
+const available = async (req, res) => res.json(await driverDeliveries.listAvailable(req.user.id));
+
+const accept = async (req, res) => res.json(await driverDeliveries.accept(req.user.id, requireId(req.params.id)));
+
+const reject = async (req, res) => res.json(await driverDeliveries.reject(req.user.id, requireId(req.params.id), req.body?.reason));
+
 const delivery = async (req, res) => res.json(await driverDeliveries.get(req.user.id, requireId(req.params.id)));
 
 const transition = async (req, res) => {
@@ -55,4 +61,4 @@ const location = async (req, res) => {
   res.status(201).json(await tracking.recordLocation(driver, body));
 };
 
-module.exports = { me, setStatus, deliveries, delivery, transition, location };
+module.exports = { me, setStatus, deliveries, available, accept, reject, delivery, transition, location };

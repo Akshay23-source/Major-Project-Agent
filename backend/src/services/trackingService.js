@@ -2,7 +2,8 @@
  * Driver GPS history and live positions.
  * The app polls these endpoints every few seconds for live positions.
  */
-const { TrackingHistory, Driver, DeliveryJob } = require('../models');
+const { TrackingHistory, Driver, DeliveryJob, Order } = require('../models');
+const { serialize, attach } = require('../utils/serialize');
 const sync = require('./syncService');
 const { badRequest } = require('../utils/http');
 
@@ -44,18 +45,31 @@ const recordLocation = async (driver, { delivery_id, latitude, longitude, accura
 /**
  * Locations for the live map. With `since`, only newer points (polling);
  * otherwise the latest point of every driver of this agent.
+ * Enriched with driver and active delivery information.
  */
 const agentLocations = async (agentId, { since } = {}) => {
+  let list = [];
   if (since) {
     const after = new Date(since);
     if (Number.isNaN(after.getTime())) throw badRequest('since must be an ISO date');
-    return TrackingHistory.find({ agent_id: agentId, created_at: { $gt: after } }).sort({ created_at: 1 }).limit(500).lean();
+    list = await TrackingHistory.find({ agent_id: agentId, created_at: { $gt: after } }).sort({ created_at: 1 }).limit(500).lean();
+  } else {
+    const drivers = await Driver.find({ agent_id: agentId }).select('_id').lean();
+    const latest = await Promise.all(
+      drivers.map((d) => TrackingHistory.findOne({ delivery_partner_id: d._id }).sort({ recorded_at: -1 }).lean()),
+    );
+    list = latest.filter(Boolean);
   }
-  const drivers = await Driver.find({ agent_id: agentId }).select('_id').lean();
-  const latest = await Promise.all(
-    drivers.map((d) => TrackingHistory.findOne({ delivery_partner_id: d._id }).sort({ recorded_at: -1 }).lean()),
-  );
-  return latest.filter(Boolean);
+
+  const serialized = serialize(list);
+  await attach(serialized, { from: 'delivery_partner_id', as: 'driver', model: Driver, select: 'name phone status vehicle_number vehicle_type completed_deliveries' });
+  await attach(serialized, { from: 'delivery_id', as: 'delivery', model: DeliveryJob, select: 'delivery_number status logistics_tracking_status pickup_location drop_location order_id pickup_time' });
+  const deliveries = serialized.map((i) => i.delivery).filter(Boolean);
+  if (deliveries.length) {
+    await attach(deliveries, { from: 'order_id', as: 'order', model: Order, select: 'order_number product quantity unit logistics_status pickup_address delivery_location tracking_id customer_name drop_contact_name' });
+  }
+
+  return serialized;
 };
 
 const latestForDriver = (agentId, driverId) =>
@@ -64,10 +78,11 @@ const latestForDriver = (agentId, driverId) =>
 const latestForDelivery = (agentId, deliveryId) =>
   TrackingHistory.findOne({ agent_id: agentId, delivery_id: deliveryId }).sort({ recorded_at: -1 }).lean();
 
-const deliveryPointsSince = (agentId, deliveryId, since) => {
+const deliveryPointsSince = async (agentId, deliveryId, since) => {
   const q = { agent_id: agentId, delivery_id: deliveryId };
   if (since) q.created_at = { $gt: new Date(since) };
-  return TrackingHistory.find(q).sort({ recorded_at: 1 }).limit(500).lean();
+  const points = await TrackingHistory.find(q).sort({ recorded_at: 1 }).limit(500).lean();
+  return serialize(points);
 };
 
 module.exports = { recordLocation, agentLocations, latestForDriver, latestForDelivery, deliveryPointsSince };

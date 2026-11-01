@@ -350,6 +350,33 @@ class VoiceService {
     }
   }
 
+  async processTextCommand(text: string) {
+    try {
+      if (!this.options || !text.trim()) return;
+      this.setState('THINKING');
+      if (this.options?.onTranscriptUpdate) this.options.onTranscriptUpdate(text);
+
+      const intent = await intentService.analyzeIntent(text, this.options.languageCode);
+
+      if (intent.confidence < 0.6) {
+        const msg = REPEAT_MESSAGES[this.options.languageCode] || REPEAT_MESSAGES.en;
+        await this.speakResponse(msg);
+        return;
+      }
+
+      if (this.isDestructiveAction(intent.intent)) {
+        this.setState('CONFIRMING');
+        if (this.options?.onActionRequired) this.options.onActionRequired(intent);
+        return;
+      }
+
+      await this.executeAction(intent);
+    } catch (error: any) {
+      this.setState('ERROR');
+      if (this.options?.onError) this.options.onError(error.message);
+    }
+  }
+
   private isDestructiveAction(intent: string): boolean {
     const destructiveIntents = ['CANCEL_ORDER', 'DELETE_FARMER', 'ADD_FARMER'];
     return destructiveIntents.includes(intent);

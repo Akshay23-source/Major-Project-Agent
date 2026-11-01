@@ -1,13 +1,48 @@
-/** Drivers (delivery partners) and vehicles, scoped to one agent. */
-const { Driver, Vehicle } = require('../models');
+const { Driver, Vehicle, Agent, DeliveryJob, Order } = require('../models');
+const env = require('../config/env');
 const { notFound, conflict } = require('../utils/http');
 const { normalizePhone } = require('./authService');
 
 // ── Drivers ──────────────────────────────────
-const listDrivers = (agentId, { status } = {}) => {
-  const q = { agent_id: agentId };
+const listDrivers = async (agentId, { status } = {}) => {
+  const allowed = [agentId];
+  if (env.marketplace?.defaultAgentEmail) {
+    const def = await Agent.findOne({ email: env.marketplace.defaultAgentEmail }).lean();
+    if (def && String(def._id) !== String(agentId)) allowed.push(def._id);
+  }
+  const generic = await Agent.findOne({ email: 'agent@gmail.com' }).lean();
+  if (generic && String(generic._id) !== String(agentId)) allowed.push(generic._id);
+
+  const q = {
+    $or: [{ agent_id: { $in: allowed } }, { agent_id: null }, { agent_id: { $exists: false } }],
+  };
   if (status?.length) q.status = { $in: status };
-  return Driver.find(q).sort(status?.length ? { rating: -1, name: 1 } : { name: 1 }).lean();
+  const drivers = await Driver.find(q).sort(status?.length ? { rating: -1, name: 1 } : { name: 1 }).lean();
+
+  for (const drv of drivers) {
+    const activeJob = await DeliveryJob.findOne({
+      delivery_partner_id: drv._id,
+      status: { $nin: ['DELIVERED', 'CANCELLED', 'FAILED_DELIVERY', 'RETURNED', 'Delivered', 'Cancelled'] },
+    }).sort({ created_at: -1 }).lean();
+
+    if (activeJob) {
+      const activeOrder = await Order.findById(activeJob.order_id).select('order_number product quantity unit').lean();
+      drv.current_assignment = {
+        delivery_id: String(activeJob._id),
+        delivery_number: activeJob.delivery_number,
+        status: activeJob.status,
+        logistics_tracking_status: activeJob.logistics_tracking_status,
+        order_number: activeOrder?.order_number || '',
+        product: activeOrder?.product || '',
+        accepted_at: activeJob.accepted_at,
+        pickup_time: activeJob.pickup_time,
+      };
+    } else {
+      drv.current_assignment = null;
+    }
+  }
+
+  return drivers;
 };
 
 const createDriver = async (agentId, data) => {

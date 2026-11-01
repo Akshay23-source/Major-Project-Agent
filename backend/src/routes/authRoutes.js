@@ -10,6 +10,7 @@ const r = Router();
 r.post('/agent/signup', limiter, c.signup);
 r.post('/agent/login', limiter, c.login);
 r.post('/driver/login', limiter, c.driverLogin);
+r.post('/driver/register', limiter, c.driverRegister);
 r.post('/driver/activate', limiter, c.driverActivate);
 r.get('/me', requireAnyUser, c.me);
 r.post('/password', requireAnyUser, c.changePassword);

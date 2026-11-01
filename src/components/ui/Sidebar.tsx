@@ -1,5 +1,16 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions, Platform, ScrollView } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  Animated, 
+  Platform, 
+  ScrollView, 
+  Modal, 
+  Pressable, 
+  useWindowDimensions 
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/colors';
 import { useSidebar } from '../../providers/SidebarProvider';
@@ -8,11 +19,9 @@ import { useAuth } from '../../providers/AuthProvider';
 import { signOut } from '../../lib/api';
 import { useLocalization } from '../../hooks/useLocalization';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const IS_MOBILE = SCREEN_WIDTH < 768;
 const SIDEBAR_WIDTH = 280;
 
-const NAV_ITEMS = [
+const AGENT_NAV_ITEMS = [
   { nameKey: 'navigation.dashboard', fallback: 'Operations & Orders', route: '/dashboard', icon: 'grid-outline' },
   { nameKey: 'navigation.orders', fallback: 'Orders', route: '/orders', icon: 'cart-outline' },
   { nameKey: 'navigation.deliveryPartners', fallback: 'Delivery Partners', route: '/delivery-partners', icon: 'bicycle' },
@@ -22,56 +31,85 @@ const NAV_ITEMS = [
   { nameKey: 'navigation.settings', fallback: 'Settings', route: '/settings', icon: 'settings-outline' },
 ];
 
+const DRIVER_NAV_ITEMS = [
+  { nameKey: 'driver.dashboard', fallback: 'Driver Dashboard', route: '/(driver)/dashboard', icon: 'home-outline' },
+  { nameKey: 'driver.myDeliveries', fallback: 'My Deliveries', route: '/(driver)/deliveries', icon: 'cube-outline' },
+];
+
 export const Sidebar = () => {
   const { isOpen, closeSidebar } = useSidebar();
-  const slideAnim = useRef(new Animated.Value(IS_MOBILE ? -SIDEBAR_WIDTH : 0)).current;
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
+  const slideAnim = useRef(new Animated.Value(isMobile ? -SIDEBAR_WIDTH : 0)).current;
   const router = useRouter();
   const segments = useSegments();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const { t } = useLocalization();
+  const isDriver = role === 'driver';
+  const navItems = isDriver ? DRIVER_NAV_ITEMS : AGENT_NAV_ITEMS;
 
   useEffect(() => {
-    if (IS_MOBILE) {
-      Animated.timing(slideAnim, {
-        toValue: isOpen ? 0 : -SIDEBAR_WIDTH,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
+    if (isMobile) {
+      if (isOpen) {
+        slideAnim.setValue(-SIDEBAR_WIDTH);
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: Platform.OS !== 'web',
+        }).start();
+      } else {
+        Animated.timing(slideAnim, {
+          toValue: -SIDEBAR_WIDTH,
+          duration: 200,
+          useNativeDriver: Platform.OS !== 'web',
+        }).start();
+      }
     }
-  }, [isOpen, IS_MOBILE]);
+  }, [isOpen, isMobile]);
 
   const handleNavPress = (route: string) => {
-    if (IS_MOBILE) closeSidebar();
+    if (isMobile) closeSidebar();
     router.push(route as any);
   };
 
   const handleLogout = async () => {
-    if (IS_MOBILE) closeSidebar();
+    if (isMobile) closeSidebar();
     await signOut();
+    router.replace('/login');
   };
 
-  const currentRoute = '/' + segments.join('/');
+  const normalizedSegments = segments.filter((s) => !s.startsWith('('));
+  const currentRoute = '/' + normalizedSegments.join('/');
   const isActive = (route: string) => {
-    if (route === '/dashboard' && (currentRoute === '/dashboard' || currentRoute === '/')) return true;
-    if (route !== '/dashboard' && currentRoute.startsWith(route)) return true;
+    const cleanRoute = route.replace(/^\/\((?:agent|driver)\)/, '');
+    if (cleanRoute === '/dashboard' && (currentRoute === '/dashboard' || currentRoute === '/' || currentRoute === '')) return true;
+    if (cleanRoute !== '/dashboard' && currentRoute.startsWith(cleanRoute)) return true;
     return false;
   };
 
-  const renderSidebarContent = () => (
+  const renderSidebarContent = (showCloseButton = false) => (
     <View style={styles.sidebarContainer}>
       <View style={styles.logoContainer}>
-        <Ionicons name="leaf" size={28} color={Colors.surface} />
-        <Text style={styles.logoText}>AgriAgent</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+          <Ionicons name="leaf" size={28} color={Colors.surface} />
+          <Text style={styles.logoText}>AgriAgent</Text>
+        </View>
+        {showCloseButton && (
+          <TouchableOpacity onPress={closeSidebar} style={styles.drawerCloseBtn} activeOpacity={0.7}>
+            <Ionicons name="close" size={24} color={Colors.surface} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView style={styles.navContainer} showsVerticalScrollIndicator={false}>
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const active = isActive(item.route);
           return (
             <TouchableOpacity
               key={item.fallback}
               style={[styles.navItem, active && styles.navItemActive]}
               onPress={() => handleNavPress(item.route)}
+              activeOpacity={0.7}
             >
               <Ionicons
                 name={item.icon as any}
@@ -81,7 +119,7 @@ export const Sidebar = () => {
               <Text style={[styles.navText, active && styles.navTextActive]}>
                 {t(item.nameKey) || item.fallback}
               </Text>
-              {item.fallback === 'Notifications' && (
+              {!isDriver && item.fallback === 'Notifications' && (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>3</Text>
                 </View>
@@ -92,43 +130,51 @@ export const Sidebar = () => {
       </ScrollView>
 
       <View style={styles.profileSection}>
-        <TouchableOpacity style={styles.navItem} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={22} color={'#FF8A8A'} />
-          <Text style={[styles.navText, { color: '#FF8A8A' }]}>{t('navigation.logout') || 'Logout'}</Text>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.7}>
+          <Ionicons name="log-out-outline" size={22} color={'#FFFFFF'} />
+          <Text style={styles.logoutText}>
+            {isDriver ? 'Logout (Switch to Agent)' : (t('navigation.logout') || 'Logout')}
+          </Text>
         </TouchableOpacity>
         <View style={styles.profileInfo}>
-          <Ionicons name="person-circle" size={40} color={Colors.surface} />
+          <Ionicons name={isDriver ? "bicycle" : "person-circle"} size={36} color={Colors.surface} />
           <View style={styles.profileTexts}>
-            <Text style={styles.profileName}>{user?.name || user?.email?.split('@')[0] || 'Agent User'}</Text>
-            <Text style={styles.profileRole}>Field Agent</Text>
+            <Text style={styles.profileName} numberOfLines={1}>
+              {user?.name || (isDriver ? user?.phone : user?.email?.split('@')[0]) || (isDriver ? 'Driver' : 'Agent User')}
+            </Text>
+            <Text style={styles.profileRole}>
+              {isDriver ? 'Delivery Partner' : 'Field Agent'}
+            </Text>
           </View>
         </View>
       </View>
     </View>
   );
 
-  if (!IS_MOBILE) {
-    return <View style={styles.desktopContainer}>{renderSidebarContent()}</View>;
+  if (!isMobile) {
+    return <View style={styles.desktopContainer}>{renderSidebarContent(false)}</View>;
   }
 
   return (
-    <>
-      {isOpen && (
-        <TouchableOpacity
-          style={styles.overlay}
-          activeOpacity={1}
-          onPress={closeSidebar}
-        />
-      )}
-      <Animated.View
-        style={[
-          styles.mobileContainer,
-          { transform: [{ translateX: slideAnim }] }
-        ]}
-      >
-        {renderSidebarContent()}
-      </Animated.View>
-    </>
+    <Modal
+      visible={isOpen}
+      transparent
+      animationType="none"
+      onRequestClose={closeSidebar}
+      statusBarTranslucent
+    >
+      <View style={styles.modalWrapper}>
+        <Pressable style={styles.modalOverlay} onPress={closeSidebar} />
+        <Animated.View
+          style={[
+            styles.mobileContainer,
+            { transform: [{ translateX: slideAnim }] }
+          ]}
+        >
+          {renderSidebarContent(true)}
+        </Animated.View>
+      </View>
+    </Modal>
   );
 };
 
@@ -140,46 +186,51 @@ const styles = StyleSheet.create({
     borderRightColor: Colors.primaryDark,
     height: '100%',
   },
-  mobileContainer: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    width: SIDEBAR_WIDTH,
-    backgroundColor: Colors.primaryDark,
-    zIndex: 100,
-    elevation: 100,
-    shadowColor: '#000',
-    shadowOffset: { width: 2, height: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
+  modalWrapper: {
+    flex: 1,
+    flexDirection: 'row',
   },
-  overlay: {
+  modalOverlay: {
     position: 'absolute',
     top: 0,
-    bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: Colors.overlay,
-    zIndex: 99,
-    elevation: 99,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  mobileContainer: {
+    width: SIDEBAR_WIDTH,
+    maxWidth: '85%',
+    backgroundColor: Colors.primaryDark,
+    height: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 4, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 20,
+    zIndex: 100,
   },
   sidebarContainer: {
     flex: 1,
-    paddingTop: Platform.OS === 'ios' ? 40 : 20,
+    paddingTop: Platform.OS === 'ios' ? 44 : 20,
     paddingBottom: 20,
   },
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    marginBottom: 30,
+    marginBottom: 24,
   },
   logoText: {
     fontSize: 22,
     fontWeight: 'bold',
     color: Colors.surface,
     marginLeft: 10,
+  },
+  drawerCloseBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   navContainer: {
     flex: 1,
@@ -191,14 +242,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 12,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   navItemActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
   },
   navText: {
     fontSize: 15,
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: 'rgba(255, 255, 255, 0.75)',
     marginLeft: 14,
     fontWeight: '500',
     flex: 1,
@@ -221,21 +272,38 @@ const styles = StyleSheet.create({
   profileSection: {
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.15)',
-    paddingTop: 10,
+    paddingTop: 12,
     paddingHorizontal: 12,
-    marginTop: 10,
+    marginTop: 8,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
+    marginBottom: 10,
+  },
+  logoutText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    marginLeft: 10,
+    fontWeight: '700',
+    flex: 1,
   },
   profileInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
   },
   profileTexts: {
     marginLeft: 10,
+    flex: 1,
   },
   profileName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: 'bold',
     color: Colors.surface,
   },
@@ -244,3 +312,4 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.7)',
   },
 });
+

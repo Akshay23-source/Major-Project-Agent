@@ -15,7 +15,7 @@ interface Props extends TextInputProps {
 }
 
 /** Labelled input with leading icon, focus ring, error and hint — same as Farm Marketplace's Input. */
-const AuthInput = forwardRef<TextInput, Props>(function AuthInput(
+const AuthInput = forwardRef<any, Props>(function AuthInput(
   { label, icon, error, hint, required, passwordToggle, containerStyle, style, onFocus, onBlur, ...rest },
   ref
 ) {

@@ -16,6 +16,7 @@ const DriverSchema = new Schema(
     vehicle_number: { type: String, trim: true },
     license_number: { type: String, trim: true },
     status: { type: String, enum: DRIVER_STATUSES, default: 'OFFLINE' },
+    verification_status: { type: String, enum: ['VERIFIED', 'PENDING', 'REJECTED'], default: 'VERIFIED' },
     rating: { type: Number, default: 5, min: 0, max: 5 },
     completed_deliveries: { type: Number, default: 0 },
     failed_deliveries: { type: Number, default: 0 },

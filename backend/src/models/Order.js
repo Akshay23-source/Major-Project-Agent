@@ -64,10 +64,47 @@ const OrderSchema = new Schema(
     drop_contact_name: String,
     drop_contact_phone: String,
 
+    // Additional marketplace / order info
+    customer_name: String,
+    customer_phone: String,
+    product_image: String,
+    payment_status: { type: String, default: 'PENDING' },
+
+    // Driver rejections tracking
+    rejections: [
+      {
+        driver_id: ref('Driver'),
+        driver_name: String,
+        rejected_at: { type: Date, default: Date.now },
+        reason: String,
+      },
+    ],
+
     // Logistics
     logistics_status: { type: String, enum: LOGISTICS_STATUSES, default: 'PENDING' },
     tracking_id: String,
     estimated_delivery: Date,
+
+    // Driver Acceptance Details
+    accepted_by_driver_id: ref('Driver'),
+    accepted_by_driver_name: String,
+    accepted_at: Date,
+
+    // Customer Delivery Verification
+    verification_status: {
+      type: String,
+      enum: ['NOT_APPLICABLE', 'AWAITING_VERIFICATION', 'VERIFIED', 'ISSUE_REPORTED'],
+      default: 'NOT_APPLICABLE',
+    },
+    customer_verification: {
+      customer_id: String,
+      delivered_confirmed: Boolean,
+      quality_confirmed: Boolean,
+      security_confirmed: Boolean,
+      rating: { type: Number, min: 1, max: 5 },
+      comments: String,
+      verified_at: Date,
+    },
 
     // Marketplace link + sync state (MARKETPLACE orders only)
     external_order_id: String,
@@ -81,8 +118,8 @@ const OrderSchema = new Schema(
 
 OrderSchema.pre('validate', function enforceSourceRules() {
   if (this.source === 'MARKETPLACE') {
-    // Marketplace jobs never carry money or marketplace account links.
-    for (const f of ['price', 'subtotal', 'commission', 'delivery_charge', 'total_amount', 'buyer_id', 'farmer_id', 'product_id']) {
+    // Marketplace jobs don't carry agent commission / settlement records
+    for (const f of ['price', 'subtotal', 'commission', 'delivery_charge', 'buyer_id', 'farmer_id', 'product_id']) {
       if (this.get(f) !== undefined) this.set(f, undefined);
     }
     if (!this.external_order_id) this.invalidate('external_order_id', 'external_order_id is required for marketplace orders');

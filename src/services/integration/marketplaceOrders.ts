@@ -100,3 +100,9 @@ export const markDeliveryFailed = async (orderId: string, reason: string): Promi
 export const markDeliveryReturned = async (orderId: string, note?: string): Promise<void> => {
   await api.post(`/marketplace/orders/${orderId}/return`, { note });
 };
+
+/** Manually trigger sync of orders from Farm Marketplace (main app). */
+export const syncMarketplaceOrdersFromMainApp = async (): Promise<{ synced?: number; updated?: number; total?: number }> => {
+  return await api.post('/marketplace/sync/from-main-app');
+};
+

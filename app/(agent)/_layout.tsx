@@ -17,7 +17,8 @@ export default function AgentLayout() {
     stopListening,
     cancel,
     confirmAction,
-    cancelAction
+    cancelAction,
+    sendCommand
   } = useVoiceAssistant();
 
   return (
@@ -46,6 +47,7 @@ export default function AgentLayout() {
             onCancel={cancel}
             onConfirmAction={confirmAction}
             onCancelAction={cancelAction}
+            onSendCommand={sendCommand}
           />
         )}
       </View>

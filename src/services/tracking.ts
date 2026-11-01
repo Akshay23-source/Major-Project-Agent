@@ -10,6 +10,32 @@ export interface DriverLocation {
   heading?: number;
   recorded_at: string;
   created_at?: string;
+  driver?: {
+    name?: string;
+    phone?: string;
+    status?: string;
+    vehicle_number?: string;
+    vehicle_type?: string;
+    completed_deliveries?: number;
+  };
+  delivery?: {
+    delivery_number?: string;
+    status?: string;
+    logistics_tracking_status?: string;
+    pickup_location?: string;
+    drop_location?: string;
+    pickup_time?: string;
+    order?: {
+      order_number?: string;
+      product?: string;
+      quantity?: number;
+      unit?: string;
+      logistics_status?: string;
+      pickup_address?: string;
+      delivery_location?: string;
+      tracking_id?: string;
+    };
+  };
 }
 
 type LocationCallback = (location: DriverLocation) => void;

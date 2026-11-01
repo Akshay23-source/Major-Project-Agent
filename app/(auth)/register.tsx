@@ -42,7 +42,7 @@ const ROLE_CARDS: {
   {
     key: 'driver',
     title: 'Delivery Driver',
-    body: 'Activate the account your agent created for you.',
+    body: 'Register as a delivery driver and accept orders.',
     icon: 'car',
     tint: BrandColors.tintAmber,
     perks: ['See assigned pickups', 'Update delivery status', 'Share live location'],
@@ -89,9 +89,9 @@ export default function RegisterScreen() {
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState<Session | null>(null);
 
-  const emailRef = useRef<TextInput>(null);
-  const phoneRef = useRef<TextInput>(null);
-  const confirmRef = useRef<TextInput>(null);
+  const emailRef = useRef<any>(null);
+  const phoneRef = useRef<any>(null);
+  const confirmRef = useRef<any>(null);
 
   const sheetAnim = useEntrance(80);
   const stepAnim = useEntrance(0, step, 14);
@@ -118,8 +118,9 @@ export default function RegisterScreen() {
       if (!email.trim()) e.email = 'Email is required';
       else if (!EMAIL_RE.test(email.trim())) e.email = 'Enter a valid email address';
       if (phone.trim() && digitsOf(phone).length < 10) e.phone = 'Enter a valid 10-digit mobile number';
-    } else if (digitsOf(phone).length < 10) {
-      e.phone = 'Enter the 10-digit number your agent registered';
+    } else {
+      if (name.trim().length < 2) e.name = 'Enter your full name (at least 2 characters)';
+      if (digitsOf(phone).length < 10) e.phone = 'Enter a valid 10-digit mobile number';
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -161,7 +162,11 @@ export default function RegisterScreen() {
             password,
             ...(phone.trim() ? { phone: phone.trim() } : {}),
           })
-        : await authApi.driverActivate(phone.trim(), password);
+        : await authApi.driverRegister({
+            name: name.trim() || 'Driver',
+            phone: phone.trim(),
+            password,
+          });
       setCreated(session);
     } catch (e) {
       setFormError(errorMessage(e));
@@ -169,7 +174,6 @@ export default function RegisterScreen() {
       setLoading(false);
     }
   };
-
   const handleContinue = async () => {
     if (!created) return;
     await setSession(created);
@@ -343,20 +347,31 @@ export default function RegisterScreen() {
                         <View style={styles.infoCard}>
                           <Ionicons name="information-circle" size={20} color={BrandColors.info} />
                           <Text style={styles.infoText}>
-                            Drivers are added by their agent. Enter the mobile number your agent registered, then set
-                            your own password.
+                            Register as a delivery driver. If your agent already added your number, we'll link your account automatically.
                           </Text>
                         </View>
                         <AuthInput
+                          label="Full Name"
+                          required
+                          icon="person-outline"
+                          placeholder="e.g. Ravi Kumar"
+                          value={name}
+                          onChangeText={(v) => { setName(v); clear('name'); }}
+                          autoCapitalize="words"
+                          autoComplete="name"
+                          textContentType="name"
+                          returnKeyType="next"
+                          onSubmitEditing={() => phoneRef.current?.focus()}
+                          error={errors.name}
+                        />
+                        <AuthInput
+                          ref={phoneRef}
                           label="Mobile Number"
                           required
                           icon="call-outline"
-                          placeholder="Number registered by your agent"
+                          placeholder="10-digit mobile number"
                           value={phone}
-                          onChangeText={(v) => {
-                            setPhone(v);
-                            clear('phone');
-                          }}
+                          onChangeText={(v) => { setPhone(v); clear('phone'); }}
                           keyboardType="phone-pad"
                           autoComplete="tel"
                           textContentType="telephoneNumber"

@@ -2,10 +2,12 @@
  * Agent actions on marketplace delivery jobs (Marketplace Orders screen).
  * Ports src/services/integration/marketplaceOrders.ts + the order trigger in 014.
  */
-const { Order, DeliveryJob, Driver } = require('../models');
+const { Order, DeliveryJob, Driver, Agent } = require('../models');
 const sync = require('./syncService');
 const deliveryService = require('./deliveryService');
+const { syncFromMainApp, syncToMainApp } = require('./mainAppSyncService');
 const { badRequest, conflict, notFound } = require('../utils/http');
+const env = require('../config/env');
 
 const FILTER_STATUSES = {
   PENDING: ['PENDING'],
@@ -21,10 +23,29 @@ const LIST_FIELDS = [
   'drop_contact_name', 'drop_contact_phone', 'priority', 'is_perishable', 'is_fragile', 'logistics_status',
   'marketplace_intake_status', 'marketplace_sync_status', 'marketplace_last_synced_at', 'marketplace_last_error',
   'estimated_delivery', 'tracking_id', 'cancellation_reason', 'created_at',
+  'accepted_by_driver_id', 'accepted_by_driver_name', 'accepted_at', 'verification_status', 'customer_verification',
 ].join(' ');
 
-const list = (agentId, filter = 'ALL') => {
-  const q = { agent_id: agentId, source: 'MARKETPLACE' };
+const getAllowedAgentIds = async (agentId) => {
+  const allowed = [agentId];
+  if (env.marketplace?.defaultAgentEmail) {
+    const def = await Agent.findOne({ email: env.marketplace.defaultAgentEmail }).lean();
+    if (def && String(def._id) !== String(agentId)) allowed.push(def._id);
+  }
+  const generic = await Agent.findOne({ email: 'agent@gmail.com' }).lean();
+  if (generic && String(generic._id) !== String(agentId)) allowed.push(generic._id);
+  return allowed;
+};
+
+const list = async (agentId, filter = 'ALL') => {
+  // Sync latest orders from the shared main app collection
+  await syncFromMainApp(agentId).catch((err) => console.warn('[marketplace] sync error:', err.message));
+
+  const allowedIds = await getAllowedAgentIds(agentId);
+  const q = {
+    source: 'MARKETPLACE',
+    $or: [{ agent_id: { $in: allowedIds } }, { agent_id: null }, { agent_id: { $exists: false } }],
+  };
   if (filter !== 'ALL') {
     if (!FILTER_STATUSES[filter]) throw badRequest(`Unknown filter ${filter}`);
     q.logistics_status = { $in: FILTER_STATUSES[filter] };
@@ -33,7 +54,11 @@ const list = (agentId, filter = 'ALL') => {
 };
 
 const metrics = async (agentId) => {
-  const base = { agent_id: agentId, source: 'MARKETPLACE' };
+  const allowedIds = await getAllowedAgentIds(agentId);
+  const base = {
+    source: 'MARKETPLACE',
+    $or: [{ agent_id: { $in: allowedIds } }, { agent_id: null }, { agent_id: { $exists: false } }],
+  };
   const [newOrders, assigned, awaitingPickup, inTransit, delivered, syncFailed] = await Promise.all([
     Order.countDocuments({ ...base, marketplace_intake_status: 'NEW', logistics_status: 'PENDING' }),
     Order.countDocuments({ ...base, logistics_status: 'PICKUP_ASSIGNED' }),
@@ -46,8 +71,12 @@ const metrics = async (agentId) => {
 };
 
 const ownedMarketplaceOrder = async (agentId, orderId) => {
-  const order = await Order.findOne({ _id: orderId, agent_id: agentId, source: 'MARKETPLACE' });
+  const order = await Order.findOne({ _id: orderId, source: 'MARKETPLACE' });
   if (!order) throw notFound('Marketplace order not found');
+  if (String(order.agent_id) !== String(agentId)) {
+    order.agent_id = agentId;
+    await order.save();
+  }
   return order;
 };
 
@@ -64,6 +93,7 @@ const accept = async (agentId, orderId) => {
     event_type: 'ORDER_ACCEPTED',
     message: 'Order accepted by the logistics partner. A driver will be assigned shortly.',
   });
+  await syncToMainApp(order._id);
   return order;
 };
 
@@ -81,6 +111,7 @@ const reject = async (agentId, orderId, reason) => {
   order.cancellation_reason = trimmed;
   await order.save();
   await sync.enqueue(order, { kind: 'STATUS', logistics_status: 'CANCELLED', event_type: 'CANCELLED', message: trimmed });
+  await syncToMainApp(order._id);
   return order;
 };
 
@@ -106,6 +137,7 @@ const markFailed = async (agentId, orderId, reason) => {
   await deliveryService.recordEvent(delivery, { eventType: 'FAILED_DELIVERY', description: trimmed, actorType: 'AGENT', actorId: agentId });
   if (delivery.delivery_partner_id) await Driver.updateOne({ _id: delivery.delivery_partner_id }, { $inc: { failed_deliveries: 1 } });
   await deliveryService.freeResources(delivery);
+  await syncToMainApp(order._id);
   return order;
 };
 
@@ -122,7 +154,9 @@ const markReturned = async (agentId, orderId, note) => {
     actorId: agentId,
   });
   await deliveryService.freeResources(delivery);
+  await syncToMainApp(order._id);
   return order;
 };
 
 module.exports = { list, metrics, accept, reject, markFailed, markReturned, FILTER_STATUSES };
+

@@ -28,6 +28,10 @@ export const VALID_TRANSITIONS: Record<string, string[]> = {
 export const getMyDeliveries = async (statusFilter: 'PENDING' | 'COMPLETED' | 'ALL' = 'ALL') =>
   api.get<any[]>('/driver/deliveries', { filter: statusFilter });
 
+export const getAvailableDeliveries = async () => api.get<any[]>('/driver/available');
+
+export const acceptDelivery = async (deliveryId: string) => api.post<any>(`/driver/deliveries/${deliveryId}/accept`);
+
 export const getDeliveryDetails = async (deliveryId: string) => api.get<any>(`/driver/deliveries/${deliveryId}`);
 
 export const transitionDriverStatus = async (

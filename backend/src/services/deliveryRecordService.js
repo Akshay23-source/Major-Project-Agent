@@ -9,11 +9,13 @@ const deliveryService = require('./deliveryService');
 const { badRequest, notFound, conflict } = require('../utils/http');
 
 const withOrderAndEmployee = async (items, agentId, { farmer = 'name', buyer = 'name' } = {}) => {
-  await attach(items, { from: 'order_id', as: 'orders', model: Order, select: 'product quantity unit farmer_id buyer_id', filter: { agent_id: agentId } });
+  await attach(items, { from: 'order_id', as: 'orders', model: Order, select: 'order_number product quantity unit farmer_id buyer_id logistics_status verification_status customer_verification accepted_by_driver_name accepted_at', filter: { agent_id: agentId } });
   const orders = (Array.isArray(items) ? items : [items]).map((i) => i.orders).filter(Boolean);
   await attach(orders, { from: 'farmer_id', as: 'farmers', model: Farmer, select: farmer, filter: { agent_id: agentId } });
   await attach(orders, { from: 'buyer_id', as: 'buyers', model: Buyer, select: buyer, filter: { agent_id: agentId } });
   await attach(items, { from: 'employee_id', as: 'employees', model: Employee, select: 'name phone', filter: { agent_id: agentId } });
+  await attach(items, { from: 'delivery_partner_id', as: 'delivery_partners', model: Driver, select: 'name phone vehicle_type vehicle_number rating completed_deliveries', filter: { agent_id: agentId } });
+  await attach(items, { from: 'vehicle_id', as: 'vehicles', model: Vehicle, select: 'vehicle_number vehicle_type' });
   return items;
 };
 

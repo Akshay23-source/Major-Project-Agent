@@ -10,7 +10,7 @@
  * paymentStatus, paymentMethod, escrow, reviews, the raw payload.
  */
 const env = require('../config/env');
-const { Agent, Order } = require('../models');
+const { Agent, Order, DeliveryJob, Counter } = require('../models');
 const rules = require('./logisticsRules');
 const { notify } = require('./notificationService');
 const deliveryService = require('./deliveryService');
@@ -61,7 +61,7 @@ const nonEmpty = (v) => {
   return s || undefined;
 };
 
-/** Extract the logistics-only fields from a marketplace payload. */
+/** Extract the logistics fields from a marketplace payload. */
 const extract = (p) => {
   const items = Array.isArray(p.products) ? p.products : [];
   const packageItems = items.map((i) => ({
@@ -92,11 +92,18 @@ const extract = (p) => {
   const dropText = [drop.address, drop.city, drop.state, drop.pincode].filter(Boolean).join(', ') || undefined;
 
   const eta = p.estimatedDelivery ? new Date(p.estimatedDelivery) : undefined;
+  const custName = nonEmpty(p.buyer?.name) || nonEmpty(p.buyerName) || nonEmpty(ship.name) || 'Customer';
+  const custPhone = nonEmpty(p.buyer?.phone) || nonEmpty(p.buyerPhone) || nonEmpty(ship.phone) || '';
 
   return {
     product: summary.slice(0, 500),
     quantity: qty,
     unit: units.length === 1 ? units[0] : 'units',
+    total_amount: Number(p.totalAmount) || 0,
+    payment_status: (p.paymentStatus || 'PENDING').toUpperCase(),
+    product_image: p.productImage || (items[0] && (items[0].image || items[0].imageUrl)) || '',
+    customer_name: custName,
+    customer_phone: custPhone,
     package_items: packageItems,
     is_perishable: perishable,
     priority,
@@ -104,8 +111,8 @@ const extract = (p) => {
     estimated_delivery: eta && !Number.isNaN(eta.getTime()) ? eta : undefined,
     delivery_location: dropText,
     drop_address: Object.keys(drop).length ? drop : undefined,
-    drop_contact_name: nonEmpty(p.buyer?.name) || nonEmpty(p.buyerName),
-    drop_contact_phone: nonEmpty(p.buyer?.phone) || nonEmpty(p.buyerPhone),
+    drop_contact_name: custName,
+    drop_contact_phone: custPhone,
     pickup_address: nonEmpty(p.farmer?.address) || nonEmpty(p.pickupAddress),
     pickup_contact_name: nonEmpty(p.farmer?.name) || nonEmpty(p.farmerName),
     pickup_contact_phone: nonEmpty(p.farmer?.phone) || nonEmpty(p.farmerPhone),
@@ -172,6 +179,11 @@ const ingest = async (payload) => {
     product: f.product,
     quantity: f.quantity,
     unit: f.unit,
+    total_amount: f.total_amount,
+    payment_status: f.payment_status,
+    product_image: f.product_image,
+    customer_name: f.customer_name,
+    customer_phone: f.customer_phone,
     package_items: f.package_items,
     is_perishable: f.is_perishable,
     priority: f.priority,
@@ -190,6 +202,22 @@ const ingest = async (payload) => {
   try {
     await order.save();
     console.log(`[intake] saved agri_orders _id=${order._id} agent_id=${order.agent_id} logistics_status=${order.logistics_status}`);
+
+    // Create an initial open DeliveryJob so drivers can discover and accept it
+    if (!f.cancelled) {
+      const dlvNum = `DLV-${String(await Counter.next('delivery_number')).padStart(4, '0')}`;
+      await DeliveryJob.create({
+        delivery_number: dlvNum,
+        agent_id: agent._id,
+        order_id: order._id,
+        delivery_partner_id: null,
+        status: 'PENDING',
+        logistics_tracking_status: 'PENDING',
+        pickup_location: f.pickup_address || 'Farm Pickup',
+        drop_location: f.delivery_location || 'Customer Location',
+        created_at: new Date(),
+      });
+    }
   } catch (err) {
     // Two deliveries of the same order raced: the unique index let one win — treat as a re-send.
     if (err && err.code === 11000) {

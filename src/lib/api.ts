@@ -8,19 +8,41 @@
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import Constants from "expo-constants";
 
-const RAW_URL = (process.env.EXPO_PUBLIC_API_URL || "").trim().replace(/\/+$/, "");
+export const getBaseUrl = (): string => {
+  if (Platform.OS === "web" && typeof window !== "undefined" && window.location) {
+    const host = window.location.hostname || "localhost";
+    return `http://${host}:4000`;
+  }
 
-if (!RAW_URL) {
-  console.error("❌ EXPO_PUBLIC_API_URL is missing. Add it to .env (e.g. http://192.168.1.10:4000) and restart Expo.");
-}
+  // On Android/iOS: dynamically resolve the Metro host IP that the device connected to
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    (Constants as any).manifest?.debuggerHost ||
+    (Constants as any).manifest2?.extra?.expoClient?.hostUri;
 
-export const API_URL = RAW_URL;
+  if (hostUri) {
+    const metroIp = hostUri.split(":")[0];
+    if (metroIp && metroIp !== "localhost" && metroIp !== "127.0.0.1" && metroIp !== "192.168.0.108") {
+      return `http://${metroIp}:4000`;
+    }
+  }
+
+  const envUrl = (process.env.EXPO_PUBLIC_API_URL || "").trim().replace(/\/+$/, "");
+  if (envUrl && !envUrl.includes("192.168.0.108")) {
+    return envUrl;
+  }
+
+  return "http://172.17.4.91:4000";
+};
+
+export const API_URL = getBaseUrl();
 
 /** A request that gets no answer (wrong IP, firewall, backend down) fails after this instead of hanging forever. */
 const REQUEST_TIMEOUT_MS = 15000;
 
-console.log(`[api] base URL: ${API_URL || "(missing)"}`);
+console.log(`[api] base URL: ${getBaseUrl()}`);
 
 export type Role = "agent" | "driver";
 
@@ -103,7 +125,7 @@ export const signOut = () => setSession(null);
 type Query = Record<string, string | number | boolean | undefined | null>;
 
 const buildUrl = (path: string, query?: Query) => {
-  const url = `${API_URL}/api${path}`;
+  const url = `${getBaseUrl()}/api${path}`;
   if (!query) return url;
   const qs = Object.entries(query)
     .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -113,7 +135,8 @@ const buildUrl = (path: string, query?: Query) => {
 };
 
 const request = async <T>(method: string, path: string, body?: unknown, query?: Query): Promise<T> => {
-  if (!API_URL) throw new ApiError(0, "App is not configured: EXPO_PUBLIC_API_URL is missing.");
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) throw new ApiError(0, "App is not configured: API URL is missing.");
   await loadSession();
 
   const headers: Record<string, string> = { Accept: "application/json" };
@@ -140,8 +163,8 @@ const request = async <T>(method: string, path: string, body?: unknown, query?: 
     throw new ApiError(
       0,
       timedOut
-        ? `The Agri Agent server at ${API_URL} did not respond in ${REQUEST_TIMEOUT_MS / 1000}s. Check the IP, that the backend is running, and the firewall.`
-        : `Cannot reach the Agri Agent server at ${API_URL}. Check your connection.`
+        ? `The Agri Agent server at ${baseUrl} did not respond in ${REQUEST_TIMEOUT_MS / 1000}s. Check the IP, that the backend is running, and the firewall.`
+        : `Cannot reach the Agri Agent server at ${baseUrl}. Check your connection.`
     );
   } finally {
     clearTimeout(timer);
@@ -219,6 +242,12 @@ export const authApi = {
    */
   driverActivate: (phone: string, password: string) =>
     api.post<Session>("/auth/driver/activate", { phone: phone.trim(), password }),
+
+  /**
+   * Driver self-registration: POST /api/auth/driver/register.
+   */
+  driverRegister: (data: { name: string; phone: string; password: string; vehicle_type?: string; vehicle_number?: string; license_number?: string; city?: string }) =>
+    api.post<Session>("/auth/driver/register", data),
 
   changePassword: (current_password: string, new_password: string) =>
     api.post<{ success: boolean }>("/auth/password", { current_password, new_password }),

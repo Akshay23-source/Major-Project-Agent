@@ -193,6 +193,11 @@ function matchLocalIntent(text: string): VoiceIntent {
     return { intent: 'VIEW_DASHBOARD', parameters: {}, confidence: 0.95 };
   }
 
+  // 32. Greetings & Help
+  if (/^(hello|hi|hey|namaste|vanakkam|namaskara|namaskaram|help|what can you do|नमस्ते|வணக்கம்|ನಮಸ್ಕಾರ)/i.test(lower)) {
+    return { intent: 'VIEW_VOICE_CHAT', parameters: {}, confidence: 0.95 };
+  }
+
   return { intent: 'UNKNOWN', parameters: {}, confidence: 0.3 };
 }
 

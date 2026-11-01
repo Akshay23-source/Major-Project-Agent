@@ -59,6 +59,7 @@ r.post('/marketplace/orders/:id/return', marketplace.returned);
 r.post('/marketplace/orders/:id/sync/retry', marketplace.retrySync);
 r.get('/marketplace/orders/:id/sync/logs', marketplace.syncLogs);
 r.post('/marketplace/sync/run', marketplace.runSync);
+r.post('/marketplace/sync/from-main-app', marketplace.syncFromMainApp);
 
 // Agent-owned business data
 const crud = (path, h) => {

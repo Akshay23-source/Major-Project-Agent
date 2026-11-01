@@ -86,7 +86,6 @@ const callLLM = async (messages) => {
 };
 
 const chat = async (agentId, inputMessages) => {
-  if (!env.openaiApiKey) throw new HttpError(503, 'AI is not configured. OPENAI_API_KEY is missing.');
   if (!Array.isArray(inputMessages) || !inputMessages.length) throw badRequest('messages must be a non-empty array');
 
   // Only plain user/assistant text from the client; tool plumbing is server-side.
@@ -94,6 +93,48 @@ const chat = async (agentId, inputMessages) => {
     .filter((m) => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string')
     .slice(-20)
     .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
+
+  if (!env.openaiApiKey) {
+    // Intelligent local assistant fallback using real MongoDB database
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content?.toLowerCase() || '';
+    
+    if (lastUserMsg.includes('summary') || lastUserMsg.includes('dashboard') || lastUserMsg.includes('count')) {
+      const summary = await runTool(agentId, 'get_dashboard_summary');
+      return {
+        reply: `📊 Here is your current operations summary:\n• Total Registered Farmers: ${summary.total_farmers}\n• Total Orders: ${summary.total_orders}`,
+        proposedAction: null
+      };
+    }
+    
+    if (lastUserMsg.includes('farmer') || lastUserMsg.includes('kisan')) {
+      const farmers = await runTool(agentId, 'get_farmers');
+      if (!farmers.length) {
+        return { reply: "You don't have any registered farmers yet. You can register a new farmer from the Farmers menu.", proposedAction: null };
+      }
+      const list = farmers.slice(0, 5).map(f => `• ${f.name} (${f.village || f.district || 'Location N/A'}) - Crops: ${Array.isArray(f.crops) ? f.crops.join(', ') : (f.crops || 'None')}`).join('\n');
+      return {
+        reply: `🌾 Here are your registered farmers (${farmers.length} total):\n${list}${farmers.length > 5 ? `\n...and ${farmers.length - 5} more.` : ''}`,
+        proposedAction: null
+      };
+    }
+
+    if (lastUserMsg.includes('order')) {
+      const orders = await runTool(agentId, 'get_recent_orders');
+      if (!orders.length) {
+        return { reply: "You don't have any recent orders yet.", proposedAction: null };
+      }
+      const list = orders.slice(0, 5).map(o => `• Order #${o.order_number || o.id.slice(-6)}: ${o.quantity}kg ${o.product} (${o.status})`).join('\n');
+      return {
+        reply: `📦 Here are your recent orders:\n${list}`,
+        proposedAction: null
+      };
+    }
+
+    return {
+      reply: "Hello! I am Agri AI, your agricultural operations assistant.\n\nI can help you with:\n• Operations summary ('Give me a dashboard summary')\n• Registered farmers ('Show my farmers')\n• Recent orders ('Show recent orders')\n• Navigation & Logistics via voice commands",
+      proposedAction: null
+    };
+  }
 
   let message = await callLLM(messages);
   let proposedAction = null;
@@ -139,6 +180,12 @@ const transcribe = async (audioBase64, languageCode) => {
   } else if (bytes.length > 3 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) {
     mimeType = 'audio/mpeg';
     filename = 'audio.mp3';
+  } else if (bytes.length > 4 && bytes.slice(0, 4).toString('hex') === '1a45dfa3') {
+    mimeType = 'audio/webm';
+    filename = 'audio.webm';
+  } else if (bytes.length > 4 && bytes.slice(0, 4).toString('ascii') === 'OggS') {
+    mimeType = 'audio/ogg';
+    filename = 'audio.ogg';
   }
 
   const form = new FormData();

@@ -8,15 +8,30 @@ const password = z.string().min(8, 'Password must be at least 8 characters').max
 const phone = z.string().regex(/^\+?[\d\s-]{10,15}$/, 'Enter a valid 10-digit mobile number');
 
 const signupSchema = z.object({ name: z.string().trim().min(1).max(120), email: z.email(), password, phone: phone.optional() });
-const loginSchema = z.object({ email: z.email(), password: z.string().min(1) });
+const loginSchema = z.object({
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  identifier: z.string().optional(),
+  password: z.string().min(1),
+}).refine(data => data.email || data.phone || data.identifier, { message: 'Email or mobile number is required' });
 const driverSchema = z.object({ phone, password: z.string().min(1) });
 const activateSchema = z.object({ phone, password });
+const driverRegisterSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(120),
+  phone,
+  password,
+  vehicle_type: z.string().max(60).optional(),
+  vehicle_number: z.string().max(30).optional(),
+  license_number: z.string().max(50).optional(),
+  city: z.string().max(80).optional(),
+});
 const changeSchema = z.object({ current_password: z.string().min(1), new_password: password });
 
 const signup = async (req, res) => res.status(201).json(await authService.signupAgent(parse(signupSchema, req.body)));
 const login = async (req, res) => res.json(await authService.loginAgent(parse(loginSchema, req.body)));
 const driverLogin = async (req, res) => res.json(await authService.loginDriver(parse(driverSchema, req.body)));
 const driverActivate = async (req, res) => res.status(201).json(await authService.activateDriver(parse(activateSchema, req.body)));
+const driverRegister = async (req, res) => res.status(201).json(await authService.registerDriver(parse(driverRegisterSchema, req.body)));
 
 const me = async (req, res) => {
   const doc = req.user.role === 'driver' ? await Driver.findById(req.user.id).lean() : await Agent.findById(req.user.id).lean();
@@ -29,4 +44,4 @@ const changePassword = async (req, res) => {
   res.json({ success: true });
 };
 
-module.exports = { signup, login, driverLogin, driverActivate, me, changePassword };
+module.exports = { signup, login, driverLogin, driverActivate, driverRegister, me, changePassword };

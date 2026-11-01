@@ -108,21 +108,49 @@ export default function DeliveryPartnersScreen() {
             partners.map(p => (
               <View key={p.id} style={styles.card}>
                 <View style={styles.cardHeader}>
-                  <Text style={styles.pName}>{p.name}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pName}>{p.name}</Text>
+                    {p.created_at && (
+                      <Text style={styles.regDate}>
+                        Joined: {new Date(p.created_at).toLocaleDateString()}
+                      </Text>
+                    )}
+                  </View>
                   <Text style={[
                     styles.status,
                     p.status === 'AVAILABLE' || p.status === 'ONLINE' ? styles.statusAvail :
-                    p.status === 'BUSY' ? styles.statusBusy : styles.statusOffline
+                    p.status === 'BUSY' || p.status === 'ON_DELIVERY' ? styles.statusBusy : styles.statusOffline
                   ]}>
                     {p.status}
                   </Text>
                 </View>
-                <Text style={styles.pPhone}>{p.phone}{p.vehicle_number ? `  ·  ${p.vehicle_number}` : ''}</Text>
+
+                <Text style={styles.pPhone}>
+                  📞 {p.phone}
+                  {p.vehicle_number ? `  ·  🚗 ${p.vehicle_number}` : ''}
+                  {p.vehicle_type ? ` (${p.vehicle_type})` : ''}
+                </Text>
+
+                {/* Active Assignment Section */}
+                {p.current_assignment ? (
+                  <View style={styles.assignmentBox}>
+                    <View style={styles.assignmentHeader}>
+                      <Text style={styles.assignmentTitle}>📦 Active Delivery Assignment</Text>
+                      <Text style={styles.assignmentStatus}>
+                        {p.current_assignment.logistics_tracking_status || p.current_assignment.status}
+                      </Text>
+                    </View>
+                    <Text style={styles.assignmentOrder}>
+                      Order #{p.current_assignment.order_number || p.current_assignment.delivery_number}
+                      {p.current_assignment.product ? ` • ${p.current_assignment.product}` : ''}
+                    </Text>
+                  </View>
+                ) : null}
 
                 <View style={styles.statsRow}>
-                  <Text style={styles.pStat}>⭐ {p.rating}</Text>
-                  <Text style={styles.pStat}>✅ {p.completed_deliveries}</Text>
-                  <Text style={styles.pStat}>❌ {p.failed_deliveries}</Text>
+                  <Text style={styles.pStat}>⭐ {p.rating || 5.0} Rating</Text>
+                  <Text style={styles.pStat}>✅ {p.completed_deliveries || 0} Delivered</Text>
+                  <Text style={styles.pStat}>❌ {p.failed_deliveries || 0} Failed</Text>
                 </View>
               </View>
             ))
@@ -161,6 +189,12 @@ const styles = StyleSheet.create({
   statusOffline: { backgroundColor: Colors.textLight + '20', color: Colors.textSecondary },
 
   pPhone: { fontSize: 14, color: Colors.textSecondary, marginBottom: 12 },
+  regDate: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  assignmentBox: { backgroundColor: '#F0F9FF', borderRadius: 8, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: '#BAE6FD' },
+  assignmentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  assignmentTitle: { fontSize: 12, fontWeight: '700', color: '#0369A1' },
+  assignmentStatus: { fontSize: 11, fontWeight: '700', color: '#0284C7', backgroundColor: '#E0F2FE', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  assignmentOrder: { fontSize: 13, color: '#334155', fontWeight: '500' },
 
   statsRow: { flexDirection: 'row', paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border },
   pStat: { fontSize: 14, fontWeight: '600', color: Colors.text, marginRight: 16 }

@@ -25,8 +25,13 @@ const createApp = () => {
 
   app.use('/api/auth', require('./routes/authRoutes'));
   app.use('/api/integrations', require('./routes/integrationRoutes'));
+  app.use('/api/integration', require('./routes/integrationRoutes'));
+  // NOTE: orderRoutes (verification-only, public) is mounted AFTER agentRoutes so that
+  // the agent-auth-protected /api/orders/* endpoints defined in agentRoutes take precedence.
   app.use('/api/driver', require('./routes/driverRoutes'));
   app.use('/api', require('./routes/agentRoutes'));
+  // Public verification endpoints (no auth required — customer-facing QR/link).
+  app.use('/api/orders', require('./routes/orderRoutes'));
 
   app.use(notFoundRoute);
   app.use(errorHandler);

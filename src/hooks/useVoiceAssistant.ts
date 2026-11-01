@@ -72,6 +72,15 @@ export const useVoiceAssistant = () => {
     await voiceService.speakResponse('Action cancelled');
   }, []);
 
+  const sendCommand = useCallback(async (commandText: string) => {
+    setError(null);
+    setTranscript(commandText);
+    setAssistantResponse('');
+    setPendingAction(null);
+    setIsOpen(true);
+    await voiceService.processTextCommand(commandText);
+  }, []);
+
   return {
     isOpen,
     state,
@@ -83,6 +92,7 @@ export const useVoiceAssistant = () => {
     stopListening,
     cancel,
     confirmAction,
-    cancelAction
+    cancelAction,
+    sendCommand
   };
 };

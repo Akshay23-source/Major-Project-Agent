@@ -18,7 +18,7 @@ export default function LogisticsMapScreen() {
   const [drivers, setDrivers] = useState<DriverLocation[]>([]);
   const [partners, setPartners] = useState<Record<string, DeliveryPartner>>({});
   const [selectedDriver, setSelectedDriver] = useState<DriverLocation | null>(null);
-  const [routeGeometry, setRouteGeometry] = useState<{lat: number, lng: number}[]>([]);
+  const [routeGeometry, setRouteGeometry] = useState<{ lat: number, lng: number }[]>([]);
 
   useEffect(() => {
     loadInitialData();
@@ -45,12 +45,12 @@ export default function LogisticsMapScreen() {
     try {
       const p = await getDeliveryPartners();
       const pMap: Record<string, DeliveryPartner> = {};
-      
+
       if (p && Array.isArray(p)) {
         p.forEach(partner => pMap[partner.id] = partner);
       }
       setPartners(pMap);
-      
+
       // Latest known position of each of this agent's drivers
       setDrivers(await getAllDriverLocations());
     } catch (error) {
@@ -62,30 +62,55 @@ export default function LogisticsMapScreen() {
 
   const handleDriverPress = async (driver: DriverLocation) => {
     setSelectedDriver(driver);
-    
-    // Simulate fetching destination and drawing a route
+
+    // Fetch actual GPS trail recorded for this delivery if available
+    if (driver.delivery_id) {
+      try {
+        const { api } = require('../../../src/lib/api');
+        const points = await api.get(`/tracking/deliveries/${driver.delivery_id}/points`) as any[];
+        if (points && points.length > 0) {
+          const trail = points.map((p: any) => ({ lat: p.latitude, lng: p.longitude }));
+          setRouteGeometry(trail);
+          return;
+        }
+      } catch (err) {
+        console.warn('Could not fetch delivery trail points:', err);
+      }
+    }
+
+    // Use actual order destination if available
     try {
-      const destination = { lat: driver.latitude + 0.05, lng: driver.longitude + 0.05 };
-      const route = await calculateRoute(
-        { lat: driver.latitude, lng: driver.longitude },
-        destination
-      );
-      
-      // Decode OSRM geometry or parse GeoJSON
-      // For simplicity, we just use a straight line if we can't parse polyline easily in this basic setup
-      // A full app would use a polyline decoding library like @mapbox/polyline
-      const geometry = route.geometry as any;
-      if (geometry && typeof geometry === 'object' && geometry.coordinates) {
-        const coords = geometry.coordinates.map((c: any) => ({ lat: c[1], lng: c[0] }));
-        setRouteGeometry(coords);
-      } else {
-        setRouteGeometry([
+      const { api } = require('../../../src/lib/api');
+      const delivery = await api.get(`/driver/deliveries/${driver.delivery_id}`) as any;
+
+      if (delivery && delivery.orders && delivery.orders.drop_address) {
+        const destination = {
+          lat: delivery.orders.drop_address.lat || driver.latitude + 0.05,
+          lng: delivery.orders.drop_address.lng || driver.longitude + 0.05
+        };
+
+        const route = await calculateRoute(
           { lat: driver.latitude, lng: driver.longitude },
           destination
-        ]);
+        );
+
+        const geometry = route?.geometry as any;
+        if (geometry && typeof geometry === 'object' && geometry.coordinates) {
+          const coords = geometry.coordinates.map((c: any) => ({ lat: c[1], lng: c[0] }));
+          setRouteGeometry(coords);
+        } else {
+          setRouteGeometry([
+            { lat: driver.latitude, lng: driver.longitude },
+            destination
+          ]);
+        }
+      } else {
+        // Fallback if no coordinates found
+        setRouteGeometry([]);
       }
     } catch (error) {
       console.error("Route calc failed", error);
+      setRouteGeometry([]);
     }
   };
 
@@ -93,7 +118,7 @@ export default function LogisticsMapScreen() {
     <View style={styles.sidePanel}>
       <Text style={styles.panelTitle}>Active Deliveries</Text>
       {drivers.length === 0 ? (
-        <Text style={{color: Colors.textSecondary, marginTop: 10}}>No active deliveries.</Text>
+        <Text style={{ color: Colors.textSecondary, marginTop: 10 }}>No active deliveries.</Text>
       ) : (
         <FlatList
           data={drivers}
@@ -101,13 +126,17 @@ export default function LogisticsMapScreen() {
           renderItem={({ item }) => {
             const p = partners[item.delivery_partner_id];
             const isSelected = selectedDriver?.delivery_partner_id === item.delivery_partner_id;
+            const name = p?.name || item.driver?.name || 'Driver';
+            const status = item.delivery?.logistics_tracking_status || item.driver?.status || 'Online';
+            const orderNum = item.delivery?.order?.order_number;
             return (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.driverCard, isSelected && styles.driverCardSelected]}
                 onPress={() => handleDriverPress(item)}
               >
-                <Text style={styles.driverName}>🚚 {p?.name || 'Unknown Driver'}</Text>
-                <Text style={styles.driverStatus}>Status: In Transit</Text>
+                <Text style={styles.driverName}>🚚 {name}</Text>
+                <Text style={styles.driverStatus}>Status: {status}</Text>
+                {orderNum && <Text style={{ fontSize: 12, color: Colors.primaryDark, marginTop: 2 }}>Order: #{orderNum}</Text>}
                 <Text style={styles.driverSpeed}>Speed: {item.speed || 0} km/h</Text>
               </TouchableOpacity>
             );
@@ -124,13 +153,13 @@ export default function LogisticsMapScreen() {
         {!IS_MOBILE && renderSidePanel()}
         <View style={styles.mapContainer}>
           {drivers.length === 0 ? (
-            <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
-              <Text style={{fontSize: 18, color: Colors.textSecondary, fontWeight: 'bold'}}>No live driver locations</Text>
-              <Text style={{fontSize: 14, color: Colors.textSecondary, marginTop: 8}}>No active deliveries or drivers currently online.</Text>
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+              <Text style={{ fontSize: 18, color: Colors.textSecondary, fontWeight: 'bold' }}>No live driver locations</Text>
+              <Text style={{ fontSize: 14, color: Colors.textSecondary, marginTop: 8 }}>No active deliveries or drivers currently online.</Text>
             </View>
           ) : (
-            <LiveMap 
-              drivers={drivers} 
+            <LiveMap
+              drivers={drivers}
               onDriverPress={handleDriverPress}
               routeGeometry={routeGeometry}
             />
@@ -141,7 +170,7 @@ export default function LogisticsMapScreen() {
             <Text style={styles.driverName}>🚚 {partners[selectedDriver.delivery_partner_id]?.name}</Text>
             <Text>Speed: {selectedDriver.speed} km/h</Text>
             <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedDriver(null)}>
-              <Text style={{color: 'white'}}>Close</Text>
+              <Text style={{ color: 'white' }}>Close</Text>
             </TouchableOpacity>
           </View>
         )}

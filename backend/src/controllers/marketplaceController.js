@@ -2,6 +2,7 @@ const { z } = require('zod');
 const intake = require('../services/intakeService');
 const mkt = require('../services/marketplaceOrderService');
 const sync = require('../services/syncService');
+const { syncFromMainApp } = require('../services/mainAppSyncService');
 const { parse, requireId } = require('../utils/http');
 const { serialize } = require('../utils/serialize');
 
@@ -44,5 +45,9 @@ module.exports = {
   runSync: async (_req, res) => {
     sync.kick();
     res.status(202).json({ queued: true });
+  },
+  syncFromMainApp: async (req, res) => {
+    const result = await syncFromMainApp(req.user.agentId);
+    res.json(result);
   },
 };

@@ -9,6 +9,7 @@
 const { Order, DeliveryJob, DeliveryEvent, Driver, Vehicle, Pickup, Counter } = require('../models');
 const rules = require('./logisticsRules');
 const sync = require('./syncService');
+const { syncToMainApp } = require('./mainAppSyncService');
 const { notify } = require('./notificationService');
 const { badRequest, notFound, conflict } = require('../utils/http');
 
@@ -56,6 +57,7 @@ const recordEvent = async (delivery, { eventType, description, latitude, longitu
   }
 
   if (!fromMarketplace && order.external_order_id) {
+    syncToMainApp(order._id).catch((err) => console.warn('[delivery] syncToMainApp error:', err.message));
     await sync.enqueue(order, {
       kind: advanced ? 'STATUS' : 'EVENT',
       logistics_status: advanced ? mapped : undefined,
@@ -209,27 +211,84 @@ const driverTransition = async (driverId, deliveryId, { status, notes, photo_url
   const current = delivery.logistics_tracking_status || 'ASSIGNED';
   if (!rules.canDriverTransition(current, status)) throw badRequest(`Invalid transition from ${current} to ${status}`);
 
+  // Safety check: Delivery cannot be completed without confirmed pickup
+  if (status === 'DELIVERED' && !delivery.pickup_time && current !== 'OUT_FOR_DELIVERY' && current !== 'ARRIVED_AT_DESTINATION') {
+    throw badRequest('Pickup confirmation is required before marking order as delivered');
+  }
+
+  const driver = await Driver.findById(driverId).lean();
+  const driverName = driver?.name || 'Driver';
+
   delivery.logistics_tracking_status = status;
   const dispatchStatus = rules.DRIVER_TO_DELIVERY_STATUS[status];
   if (dispatchStatus) delivery.status = dispatchStatus;
-  if (status === 'PICKED_UP') delivery.pickup_time = new Date();
-  if (status === 'DELIVERED') delivery.delivery_time = new Date();
+
+  if (status === 'ACCEPTED') {
+    delivery.accepted_at = new Date();
+    delivery.driver_name = driverName;
+    await Order.updateOne(
+      { _id: delivery.order_id },
+      {
+        $set: {
+          accepted_by_driver_id: driverId,
+          accepted_by_driver_name: driverName,
+          accepted_at: new Date(),
+        },
+      }
+    );
+  }
+
+  if (status === 'PICKED_UP') {
+    delivery.pickup_time = new Date();
+    await Pickup.updateOne({ order_id: delivery.order_id }, { $set: { status: 'PICKED_UP', completed_at: new Date() } });
+    await Driver.updateOne({ _id: driverId }, { $set: { status: 'ON_DELIVERY' } });
+  }
+
+  if (status === 'DELIVERED') {
+    delivery.delivery_time = new Date();
+    await Order.updateOne(
+      { _id: delivery.order_id },
+      {
+        $set: {
+          verification_status: 'AWAITING_VERIFICATION',
+        },
+      }
+    );
+  }
+
   await delivery.save();
 
-  let description = notes || `Driver transitioned to ${status}`;
+  let description = notes || `Driver ${driverName} transitioned to ${status}`;
   if (photo_url) description += '\n[Photo Proof attached]';
   await recordEvent(delivery, { eventType: status, description, latitude, longitude, actorType: 'DRIVER', actorId: driverId });
 
-  if (status === 'DELIVERED') {
+  const order = await Order.findById(delivery.order_id).lean();
+
+  if (status === 'ACCEPTED') {
+    await notify(delivery.agent_id, {
+      type: 'Delivery Update',
+      title: 'Order Accepted by Driver',
+      message: `${driverName} accepted order ${order?.order_number || ''}.`,
+      related_id: delivery._id,
+      related_type: 'delivery',
+    });
+  } else if (status === 'PICKED_UP') {
+    await notify(delivery.agent_id, {
+      type: 'Delivery Update',
+      title: 'Order Picked Up',
+      message: `${driverName} confirmed pickup for order ${order?.order_number || ''}.`,
+      related_id: delivery._id,
+      related_type: 'delivery',
+    });
+  } else if (status === 'DELIVERED') {
     await Driver.updateOne({ _id: driverId }, { $set: { status: 'ONLINE' }, $inc: { completed_deliveries: 1 } });
     if (delivery.vehicle_id) {
       await Vehicle.updateOne({ _id: delivery.vehicle_id, availability_status: 'ASSIGNED' }, { $set: { availability_status: 'AVAILABLE' } });
     }
-    const order = await Order.findById(delivery.order_id).lean();
     await notify(delivery.agent_id, {
       type: 'Delivery Update',
       title: 'Delivery Completed',
-      message: `Order ${order?.order_number || ''} was delivered.`,
+      message: `Order ${order?.order_number || ''} was delivered by ${driverName}. Awaiting customer verification.`,
       related_id: delivery._id,
       related_type: 'delivery',
     });

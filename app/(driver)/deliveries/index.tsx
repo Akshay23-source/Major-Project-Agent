@@ -13,6 +13,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { Colors } from "../../../src/theme/colors";
 import { getMyDeliveries } from "../../../src/services/driver/deliveries";
 import { useLocalization } from "../../../src/hooks/useLocalization";
+import { AppHeader } from "../../../src/components/ui/AppHeader";
 
 export default function MyDeliveriesScreen() {
   const router = useRouter();
@@ -71,9 +72,10 @@ export default function MyDeliveriesScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{t('driver.myDeliveries')}</Text>
-      </View>
+      <AppHeader
+        title={t('driver.myDeliveries') || "My Deliveries"}
+        subtitle="Driver Portal"
+      />
 
       <View style={styles.tabs}>
         <TouchableOpacity 

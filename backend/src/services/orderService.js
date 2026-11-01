@@ -7,18 +7,59 @@ const { notify } = require('./notificationService');
 const { badRequest, notFound } = require('../utils/http');
 const { clean } = require('./crudService');
 
+const env = require('../config/env');
+const { Agent } = require('../models');
+
+const getAllowedAgentIds = async (agentId) => {
+  const allowed = [agentId];
+  if (env.marketplace?.defaultAgentEmail) {
+    const def = await Agent.findOne({ email: env.marketplace.defaultAgentEmail }).lean();
+    if (def && String(def._id) !== String(agentId)) allowed.push(def._id);
+  }
+  const generic = await Agent.findOne({ email: 'agent@gmail.com' }).lean();
+  if (generic && String(generic._id) !== String(agentId)) allowed.push(generic._id);
+  return allowed;
+};
+
 const withParties = async (items, agentId, farmerSelect = '', buyerSelect = '') => {
   await attach(items, { from: 'farmer_id', as: 'farmers', model: Farmer, select: farmerSelect, filter: { agent_id: agentId } });
   await attach(items, { from: 'buyer_id', as: 'buyers', model: Buyer, select: buyerSelect, filter: { agent_id: agentId } });
+  (Array.isArray(items) ? items : [items]).forEach((item) => {
+    if (!item) return;
+    if (!item.farmers && (item.pickup_contact_name || item.pickup_address)) {
+      item.farmers = {
+        name: item.pickup_contact_name || 'Farmer',
+        phone: item.pickup_contact_phone || '',
+        location: item.pickup_address || '',
+        address: item.pickup_address || '',
+      };
+    }
+    if (!item.buyers && (item.drop_contact_name || item.delivery_location || item.drop_address)) {
+      item.buyers = {
+        name: item.drop_contact_name || 'Buyer',
+        phone: item.drop_contact_phone || '',
+        address: item.delivery_location || (typeof item.drop_address === 'object' ? item.drop_address?.address : item.drop_address) || '',
+      };
+    }
+  });
   return items;
 };
 
-const list = async (agentId) =>
-  withParties(serialize(await Order.find({ agent_id: agentId }).sort({ created_at: -1 }).lean()), agentId, 'name phone', 'name');
+const list = async (agentId) => {
+  const allowedIds = await getAllowedAgentIds(agentId);
+  const docs = await Order.find({
+    $or: [{ agent_id: { $in: allowedIds } }, { agent_id: null }, { agent_id: { $exists: false } }],
+  }).sort({ created_at: -1 }).lean();
+  return withParties(serialize(docs), agentId, 'name phone', 'name');
+};
 
 /** Full farmer/buyer records are attached (the dispatch + workspace screens use several fields). */
 const get = async (agentId, id) => {
-  const doc = await Order.findOne({ _id: id, agent_id: agentId }).lean();
+  const allowedIds = await getAllowedAgentIds(agentId);
+  const doc = await Order.findOne({
+    _id: id,
+    $or: [{ agent_id: { $in: allowedIds } }, { agent_id: null }, { agent_id: { $exists: false } }],
+  }).lean();
   if (!doc) throw notFound('Order not found');
   return withParties(serialize(doc), agentId);
 };
@@ -27,8 +68,13 @@ const buyerOrders = (agentId, buyerId) => Order.find({ agent_id: agentId, buyer_
 
 /** Orders that don't have a delivery yet (Deliveries → Add). */
 const withoutDelivery = async (agentId) => {
-  const orders = serialize(await Order.find({ agent_id: agentId, status: { $ne: 'Cancelled' } }).sort({ created_at: -1 }).lean());
-  const withDelivery = new Set((await DeliveryJob.distinct('order_id', { agent_id: agentId })).map(String));
+  const allowedIds = await getAllowedAgentIds(agentId);
+  const orders = serialize(await Order.find({
+    $or: [{ agent_id: { $in: allowedIds } }, { agent_id: null }, { agent_id: { $exists: false } }],
+    status: { $nin: ['Cancelled', 'Delivered'] },
+    logistics_status: { $nin: ['CANCELLED', 'DELIVERED'] },
+  }).sort({ created_at: -1 }).lean());
+  const withDelivery = new Set((await DeliveryJob.distinct('order_id', { agent_id: { $in: allowedIds } })).map(String));
   const open = orders.filter((o) => !withDelivery.has(o.id));
   return withParties(open, agentId, 'name village', 'name location');
 };

@@ -1,4 +1,4 @@
-import { api, authApi } from "../lib/api";
+import { api, authApi, getSession } from "../lib/api";
 
 export interface Agent {
   id: string;
@@ -21,10 +21,14 @@ export interface Agent {
 }
 
 export const getCurrentAgent = async (): Promise<Agent | null> => {
+  const session = getSession();
+  if (session && session.role !== 'agent') {
+    return null;
+  }
   try {
     return await api.get<Agent>("/agent/me");
   } catch (error) {
-    console.error("Error fetching current agent:", error);
+    console.warn("Could not fetch current agent:", error);
     return null;
   }
 };

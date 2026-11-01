@@ -1,61 +1,63 @@
 /**
- * Service to handle route calculations and ETAs.
- * Future integration point for Mapbox/OSRM/Google Maps.
+ * Route calculation service for logistics tracking map.
  */
 
-export interface Coordinates {
+export interface LatLng {
   lat: number;
   lng: number;
 }
 
 export interface RouteResult {
-  geometry?: any;
-  distance: number; // in km
-  eta: number; // in minutes
-  status: 'SUCCESS' | 'UNAVAILABLE';
+  geometry?: {
+    coordinates: [number, number][]; // [lon, lat] pairs (GeoJSON standard)
+  };
+  distance?: number;
+  duration?: number;
 }
 
-export const calculateRoute = async (origin: Coordinates, destination: Coordinates): Promise<RouteResult> => {
+/**
+ * Calculates a driving route between two points using OSRM,
+ * with graceful fallback to straight-line geometry.
+ */
+export async function calculateRoute(
+  start: LatLng,
+  end: LatLng | { lat?: number; lng?: number }
+): Promise<RouteResult> {
+  const endLat = end.lat ?? (start.lat + 0.05);
+  const endLng = end.lng ?? (start.lng + 0.05);
+
   try {
-    // Note: To prevent fake data, we do not mock arbitrary coordinates.
-    // In a real implementation, you would call an external API here (e.g. Mapbox Directions).
-    // For now, we return 'UNAVAILABLE' to trigger graceful degradation in the UI.
-    
-    // Example future call:
-    // const response = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?geometries=geojson&access_token=ENV.KEY`);
-    // const data = await response.json();
-    
-    return {
-      distance: 0,
-      eta: 0,
-      status: 'UNAVAILABLE',
-    };
-  } catch (error) {
-    console.error("Route calculation error:", error);
-    return { distance: 0, eta: 0, status: 'UNAVAILABLE' };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+
+    // OSRM expects lon,lat;lon,lat
+    const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${endLng},${endLat}?overview=full&geometries=geojson`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.code === 'Ok' && json.routes?.[0]?.geometry?.coordinates) {
+        return {
+          geometry: {
+            coordinates: json.routes[0].geometry.coordinates,
+          },
+          distance: json.routes[0].distance,
+          duration: json.routes[0].duration,
+        };
+      }
+    }
+  } catch {
+    // Offline or network error: fallback to straight line
   }
-};
 
-export const calculateDistance = (origin: Coordinates, destination: Coordinates): number | null => {
-  // Haversine formula for straight-line distance if routing is unavailable
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  
-  const R = 6371; // km
-  const dLat = toRad(destination.lat - origin.lat);
-  const dLng = toRad(destination.lng - origin.lng);
-  
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(toRad(origin.lat)) * Math.cos(toRad(destination.lat)) *
-            Math.sin(dLng / 2) * Math.sin(dLng / 2);
-            
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const d = R * c;
-  
-  return parseFloat(d.toFixed(2));
-};
-
-export const calculateETA = (distanceKm: number, speedKmH: number = 30): number => {
-  if (distanceKm <= 0) return 0;
-  const hours = distanceKm / speedKmH;
-  return Math.round(hours * 60); // ETA in minutes
-};
+  // Fallback: 2-point straight line in [lon, lat] GeoJSON format
+  return {
+    geometry: {
+      coordinates: [
+        [start.lng, start.lat],
+        [endLng, endLat],
+      ],
+    },
+  };
+}

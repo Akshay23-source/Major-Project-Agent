@@ -49,13 +49,69 @@ const signupAgent = async ({ name, email, password, phone }) => {
   return agentSession(agent);
 };
 
-const loginAgent = async ({ email, password }) => {
-  const agent = await Agent.findOne({ email: email.trim().toLowerCase() }).select('+password_hash');
+const loginAgent = async ({ email, phone, identifier, password }) => {
+  const query = (identifier || email || phone || '').trim();
+  const isEmail = query.includes('@');
+  const agent = isEmail
+    ? await Agent.findOne({ email: query.toLowerCase() }).select('+password_hash')
+    : await Agent.findOne({ phone: normalizePhone(query) }).select('+password_hash');
   const ok = await bcrypt.compare(password, agent?.password_hash || DUMMY_HASH);
-  if (!agent || !ok) throw unauthorized('Invalid email or password');
+  if (!agent || !ok) throw unauthorized('Invalid email, mobile number or password');
   agent.last_login_at = new Date();
   await agent.save();
   return agentSession(agent);
+};
+
+/** Driver self-registration workflow */
+const registerDriver = async ({ name, phone, password, vehicle_type, vehicle_number, license_number, city }) => {
+  const cleanPhone = normalizePhone(phone);
+  if (!cleanPhone || cleanPhone.length < 10) throw badRequest('Valid 10-digit mobile number required');
+
+  let driver = await Driver.findOne({ phone: cleanPhone }).select('+password_hash');
+  if (driver) {
+    if (driver.password_hash) {
+      throw conflict('An account with this phone number is already registered and activated. Please log in.');
+    }
+    if (name) driver.name = name.trim();
+    if (vehicle_type) driver.vehicle_type = vehicle_type.trim();
+    if (vehicle_number) driver.vehicle_number = vehicle_number.trim();
+    if (license_number) driver.license_number = license_number.trim();
+    if (city) driver.city = city.trim();
+    driver.password_hash = await hash(password);
+    driver.status = 'ONLINE';
+    driver.last_active_at = new Date();
+    await driver.save();
+    return driverSession(driver);
+  }
+
+  let agentId = null;
+  const env = require('../config/env');
+  if (env.marketplace?.defaultAgentEmail) {
+    const ag = await Agent.findOne({ email: env.marketplace.defaultAgentEmail.toLowerCase() });
+    if (ag) agentId = ag._id;
+  }
+  if (!agentId) {
+    const firstAgent = await Agent.findOne().sort({ created_at: 1 });
+    if (firstAgent) agentId = firstAgent._id;
+  }
+  if (!agentId) {
+    throw badRequest('No administrator/agent account exists to register driver under');
+  }
+
+  driver = await Driver.create({
+    agent_id: agentId,
+    name: name ? name.trim() : `Driver ${cleanPhone.slice(-4)}`,
+    phone: cleanPhone,
+    password_hash: await hash(password),
+    vehicle_type: vehicle_type ? vehicle_type.trim() : undefined,
+    vehicle_number: vehicle_number ? vehicle_number.trim() : undefined,
+    license_number: license_number ? license_number.trim() : undefined,
+    city: city ? city.trim() : undefined,
+    status: 'ONLINE',
+    last_active_at: new Date(),
+  });
+
+  return driverSession(driver);
 };
 
 /** First-time driver sign-in: the phone must already be registered by an agent. */
@@ -89,4 +145,4 @@ const changePassword = async (user, { current_password, new_password }) => {
   await account.save();
 };
 
-module.exports = { signupAgent, loginAgent, activateDriver, loginDriver, changePassword, normalizePhone };
+module.exports = { signupAgent, loginAgent, registerDriver, activateDriver, loginDriver, changePassword, normalizePhone };
