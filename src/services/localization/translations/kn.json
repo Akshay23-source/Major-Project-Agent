@@ -58,6 +58,9 @@
   "driver": {
     "dashboard": "ಚಾಲಕ ಡ್ಯಾಶ್‌ಬೋರ್ಡ್",
     "myDeliveries": "ನನ್ನ ವಿತರಣೆಗಳು",
+    "incoming": "ಆಗಮಿಸುವ ವಿನಂತಿಗಳು",
+    "awaiting": "ಪಿಕಪ್‌ಗಾಗಿ ಕಾಯುತ್ತಿದೆ",
+    "deliveredToday": "ಇಂದು ವಿತರಿಸಲಾಗಿದೆ",
     "currentDelivery": "ಪ್ರಸ್ತುತ ವಿತರಣೆ",
     "goOnline": "ಆನ್‌ಲೈನ್‌ಗೆ ಹೋಗಿ",
     "goOffline": "ಆಫ್‌ಲೈನ್‌ಗೆ ಹೋಗಿ",

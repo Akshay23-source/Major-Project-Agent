@@ -91,7 +91,7 @@ export default function DeliveredTodayScreen() {
         <View style={styles.cardHeader}>
           <View style={styles.orderBadge}>
             <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
-            <Text style={styles.orderNum}>#{order.order_number || item.delivery_number || item.id.slice(-6).toUpperCase()}</Text>
+            <Text style={styles.orderNum}>#{order.order_number || item.delivery_number || String(item.id || '').slice(-6).toUpperCase()}</Text>
           </View>
           <Text style={styles.deliveredTime}>{formatTime(deliveredAt)}</Text>
         </View>

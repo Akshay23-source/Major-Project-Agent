@@ -187,7 +187,8 @@ export default function OrdersScreen() {
         <ScrollView contentContainerStyle={styles.list}>
           {filteredOrders.map(order => {
             const currentStage = getStageIndex(order.logistics_status);
-            const trackingId = order.tracking_id || `AGRI-${(order.external_order_id || order.id).slice(-8).toUpperCase()}`;
+            const rawId = String(order.external_order_id || order.id || '');
+            const trackingId = order.tracking_id || `AGRI-${rawId.slice(-8).toUpperCase()}`;
 
             return (
               <TouchableOpacity 
@@ -198,7 +199,7 @@ export default function OrdersScreen() {
               >
                 <View style={styles.cardHeader}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.orderId}>{order.order_number || order.id.substring(0,8)}</Text>
+                    <Text style={styles.orderId}>{order.order_number || String(order.id || '').substring(0,8)}</Text>
                     <Text style={styles.trackingIdText}>Tracking ID: {trackingId}</Text>
                   </View>
                   <StatusBadge status={order.logistics_status || order.status || 'PENDING'} />
@@ -280,7 +281,7 @@ export default function OrdersScreen() {
 
                 <View style={styles.cardFooter}>
                   <Text style={styles.dateText}>
-                    {new Date(order.created_at).toLocaleDateString()}
+                    {order.created_at ? new Date(order.created_at).toLocaleDateString() : 'Recent'}
                   </Text>
                   <View style={styles.paymentContainer}>
                     <Text style={[styles.paymentStatus, order.payment_status === 'PAID' ? styles.paidText : styles.unpaidText]}>

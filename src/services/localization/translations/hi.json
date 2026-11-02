@@ -58,6 +58,9 @@
   "driver": {
     "dashboard": "ड्राइवर डैशबोर्ड",
     "myDeliveries": "मेरी डिलीवरी",
+    "incoming": "आने वाले अनुरोध",
+    "awaiting": "पिकअप की प्रतीक्षा में",
+    "deliveredToday": "आज वितरित",
     "currentDelivery": "वर्तमान डिलीवरी",
     "goOnline": "ऑनलाइन जाओ",
     "goOffline": "ऑफ़लाइन जाओ",

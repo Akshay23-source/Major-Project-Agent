@@ -37,6 +37,7 @@ export const i18n = new I18n(translations);
 // Set default fallback
 i18n.enableFallback = true;
 i18n.defaultLocale = 'en';
+i18n.missingBehavior = 'guess';
 
 const LANGUAGE_KEY = '@agriagent_language';
 

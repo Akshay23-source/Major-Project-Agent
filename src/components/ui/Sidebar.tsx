@@ -107,6 +107,10 @@ export const Sidebar = () => {
       <ScrollView style={styles.navContainer} showsVerticalScrollIndicator={false}>
         {navItems.map((item) => {
           const active = isActive(item.route);
+          const trans = t(item.nameKey, { defaultValue: item.fallback });
+          const label = (!trans || (typeof trans === 'string' && (trans.startsWith('[missing') || trans.includes('missing "'))))
+            ? item.fallback
+            : trans;
           return (
             <TouchableOpacity
               key={item.fallback}
@@ -120,7 +124,7 @@ export const Sidebar = () => {
                 color={active ? Colors.surface : 'rgba(255, 255, 255, 0.7)'}
               />
               <Text style={[styles.navText, active && styles.navTextActive]}>
-                {t(item.nameKey) || item.fallback}
+                {label}
               </Text>
               {!isDriver && item.fallback === 'Notifications' && (
                 <View style={styles.badge}>

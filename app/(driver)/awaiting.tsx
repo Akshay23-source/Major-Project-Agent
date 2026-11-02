@@ -93,7 +93,7 @@ export default function AwaitingOrdersScreen() {
         <View style={styles.cardHeader}>
           <View style={styles.orderBadge}>
             <Ionicons name="time-outline" size={14} color={Colors.warning} />
-            <Text style={styles.orderNum}>#{order.order_number || item.id.slice(-6).toUpperCase()}</Text>
+            <Text style={styles.orderNum}>#{order.order_number || String(item.id || '').slice(-6).toUpperCase()}</Text>
           </View>
           <View style={[styles.statusBadge, { backgroundColor: Colors.warning + '20' }]}>
             <Text style={[styles.statusText, { color: Colors.warning }]}>{statusLabel}</Text>

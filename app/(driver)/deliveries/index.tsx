@@ -46,25 +46,25 @@ export default function MyDeliveriesScreen() {
       onPress={() => router.push(`/(driver)/deliveries/${item.id}`)}
     >
       <View style={styles.cardHeader}>
-        <Text style={styles.orderId}>#{item.orders?.order_number}</Text>
+        <Text style={styles.orderId}>#{item.orders?.order_number || item.delivery_number || String(item.id || '').substring(0,8)}</Text>
         <View style={[styles.badge, item.logistics_tracking_status === 'DELIVERED' ? styles.badgeSuccess : styles.badgePending]}>
           <Text style={[styles.badgeText, item.logistics_tracking_status === 'DELIVERED' ? styles.textSuccess : styles.textPending]}>
-            {item.logistics_tracking_status}
+            {item.logistics_tracking_status || item.status}
           </Text>
         </View>
       </View>
 
-      <Text style={styles.productInfo}>{item.orders?.quantity} {item.orders?.unit} • {item.orders?.product}</Text>
+      <Text style={styles.productInfo}>{item.orders?.quantity || item.quantity || 1} {item.orders?.unit || item.unit || 'units'} • {item.orders?.product || item.product || 'Produce'}</Text>
 
       <View style={styles.locations}>
         <View style={styles.locationRow}>
           <Ionicons name="location" size={16} color={Colors.primary} />
-          <Text style={styles.locationText} numberOfLines={1}>{item.orders?.farmers?.address}</Text>
+          <Text style={styles.locationText} numberOfLines={1}>{item.orders?.farmers?.address || item.orders?.pickup_address || item.pickup_location || 'Pickup Location'}</Text>
         </View>
         <View style={styles.locationLine} />
         <View style={styles.locationRow}>
           <Ionicons name="flag" size={16} color={Colors.error} />
-          <Text style={styles.locationText} numberOfLines={1}>{item.orders?.buyers?.address}</Text>
+          <Text style={styles.locationText} numberOfLines={1}>{item.orders?.buyers?.address || item.orders?.delivery_location || item.drop_location || 'Delivery Destination'}</Text>
         </View>
       </View>
     </TouchableOpacity>

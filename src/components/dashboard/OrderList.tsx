@@ -92,11 +92,11 @@ export default function OrderList({ role }: OrderListProps) {
 
             return {
               id: d.id || d._id,
-              order_number: orderInfo.order_number || d.delivery_number || 'DELIVERY',
-              product: orderInfo.product || 'Goods for Transfer',
-              quantity: orderInfo.quantity || 1,
-              unit: orderInfo.unit || 'pkg',
-              logistics_status: orderInfo.logistics_status || d.status || 'ASSIGNED',
+              order_number: orderInfo.order_number || d.order_number || d.delivery_number || 'DELIVERY',
+              product: orderInfo.product || d.product || 'Agricultural Produce',
+              quantity: orderInfo.quantity || d.quantity || 1,
+              unit: orderInfo.unit || d.unit || 'unit',
+              logistics_status: orderInfo.logistics_status || d.logistics_tracking_status || d.status || 'ASSIGNED',
               logistics_tracking_status: d.logistics_tracking_status || d.status || 'ASSIGNED',
               pickup_address: pickupAddr,
               drop_address: dropAddr,

@@ -18,12 +18,14 @@ const getAllowedAgentIds = async (agentId) => {
   }
   const generic = await Agent.findOne({ email: 'agent@gmail.com' }).lean();
   if (generic && String(generic._id) !== String(agentId)) allowed.push(generic._id);
+  const akshay = await Agent.findOne({ email: 'akshay@gmail.com' }).lean();
+  if (akshay && String(akshay._id) !== String(agentId)) allowed.push(akshay._id);
   return allowed;
 };
 
 const withParties = async (items, agentId, farmerSelect = '', buyerSelect = '') => {
-  await attach(items, { from: 'farmer_id', as: 'farmers', model: Farmer, select: farmerSelect, filter: { agent_id: agentId } });
-  await attach(items, { from: 'buyer_id', as: 'buyers', model: Buyer, select: buyerSelect, filter: { agent_id: agentId } });
+  await attach(items, { from: 'farmer_id', as: 'farmers', model: Farmer, select: farmerSelect });
+  await attach(items, { from: 'buyer_id', as: 'buyers', model: Buyer, select: buyerSelect });
   (Array.isArray(items) ? items : [items]).forEach((item) => {
     if (!item) return;
     if (!item.farmers && (item.pickup_contact_name || item.pickup_address)) {
@@ -48,7 +50,12 @@ const withParties = async (items, agentId, farmerSelect = '', buyerSelect = '') 
 const list = async (agentId) => {
   const allowedIds = await getAllowedAgentIds(agentId);
   const docs = await Order.find({
-    $or: [{ agent_id: { $in: allowedIds } }, { agent_id: null }, { agent_id: { $exists: false } }],
+    $or: [
+      { agent_id: { $in: allowedIds } },
+      { source: 'MARKETPLACE' },
+      { agent_id: null },
+      { agent_id: { $exists: false } }
+    ],
   }).sort({ created_at: -1 }).lean();
   return withParties(serialize(docs), agentId, 'name phone', 'name');
 };
@@ -58,7 +65,12 @@ const get = async (agentId, id) => {
   const allowedIds = await getAllowedAgentIds(agentId);
   const doc = await Order.findOne({
     _id: id,
-    $or: [{ agent_id: { $in: allowedIds } }, { agent_id: null }, { agent_id: { $exists: false } }],
+    $or: [
+      { agent_id: { $in: allowedIds } },
+      { source: 'MARKETPLACE' },
+      { agent_id: null },
+      { agent_id: { $exists: false } }
+    ],
   }).lean();
   if (!doc) throw notFound('Order not found');
   return withParties(serialize(doc), agentId);
@@ -109,7 +121,16 @@ const create = async (agentId, data) => {
 };
 
 const updateStatus = async (agentId, id, status, cancellationReason) => {
-  const order = await Order.findOne({ _id: id, agent_id: agentId });
+  const allowedIds = await getAllowedAgentIds(agentId);
+  const order = await Order.findOne({
+    _id: id,
+    $or: [
+      { agent_id: { $in: allowedIds } },
+      { source: 'MARKETPLACE' },
+      { agent_id: null },
+      { agent_id: { $exists: false } }
+    ],
+  });
   if (!order) throw notFound('Order not found');
 
   if (status === 'Cancelled' && order.product_id && order.status !== 'Cancelled') {
@@ -120,8 +141,18 @@ const updateStatus = async (agentId, id, status, cancellationReason) => {
     }
   }
   order.status = status;
+  if (status === 'Shipped') order.logistics_status = 'OUT_FOR_DELIVERY';
+  else if (status === 'Delivered') order.logistics_status = 'DELIVERED';
+  else if (status === 'Cancelled') order.logistics_status = 'CANCELLED';
+
   if (cancellationReason !== undefined) order.cancellation_reason = cancellationReason;
   await order.save();
+
+  // If marketplace order, sync update back
+  if (order.source === 'MARKETPLACE') {
+    const { syncToMainApp } = require('./mainAppSyncService');
+    syncToMainApp(order._id).catch(() => {});
+  }
 
   await notify(agentId, {
     type: 'Order Update',

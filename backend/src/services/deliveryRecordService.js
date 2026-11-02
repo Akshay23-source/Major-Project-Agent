@@ -17,6 +17,8 @@ const getAllowedAgentIds = async (agentId) => {
   }
   const generic = await Agent.findOne({ email: 'agent@gmail.com' }).lean();
   if (generic && String(generic._id) !== String(agentId)) allowed.push(generic._id);
+  const akshay = await Agent.findOne({ email: 'akshay@gmail.com' }).lean();
+  if (akshay && String(akshay._id) !== String(agentId)) allowed.push(akshay._id);
   return allowed;
 };
 
@@ -66,10 +68,13 @@ const get = async (agentId, id) =>
 
 const byOrder = async (agentId, orderId) => {
   const allowed = await getAllowedAgentIds(agentId);
-  return DeliveryJob.findOne({
+  const d = await DeliveryJob.findOne({
     $or: [{ agent_id: { $in: allowed } }, { agent_id: null }, { agent_id: { $exists: false } }],
     order_id: orderId,
   }).sort({ created_at: -1 }).lean();
+  if (!d) return null;
+  const items = await withOrderAndEmployee([serialize(d)], agentId);
+  return items[0] || null;
 };
 
 const byEmployee = async (agentId, employeeId) =>

@@ -55,7 +55,7 @@ export default function IncomingOrdersScreen() {
       await acceptDelivery(item.id);
       Alert.alert(
         '✅ Order Accepted',
-        `You have accepted order #${item.orders?.order_number || item.id.slice(-6)}. Proceed to pickup.`,
+        `You have accepted order #${item.orders?.order_number || String(item.id || '').slice(-6)}. Proceed to pickup.`,
         [
           {
             text: 'View Delivery',
@@ -76,7 +76,7 @@ export default function IncomingOrdersScreen() {
   const handleReject = async (item: any) => {
     Alert.alert(
       'Reject Order',
-      `Are you sure you want to reject order #${item.orders?.order_number || item.id.slice(-6)}? It will be made available to other drivers.`,
+      `Are you sure you want to reject order #${item.orders?.order_number || String(item.id || '').slice(-6)}? It will be made available to other drivers.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -138,7 +138,7 @@ export default function IncomingOrdersScreen() {
         <View style={styles.cardHeader}>
           <View style={styles.orderBadge}>
             <Ionicons name="cube-outline" size={14} color={Colors.primary} />
-            <Text style={styles.orderNum}>#{order.order_number || item.id.slice(-6).toUpperCase()}</Text>
+            <Text style={styles.orderNum}>#{order.order_number || String(item.id || '').slice(-6).toUpperCase()}</Text>
           </View>
           <View style={styles.statusBadge}>
             <Text style={styles.statusText}>NEW</Text>

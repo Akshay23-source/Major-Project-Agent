@@ -27,7 +27,11 @@ export const useLocalization = () => {
   }, []);
 
   const t = useCallback((key: string, options?: any) => {
-    return i18n.t(key, { locale, ...options });
+    const res = i18n.t(key, { locale, ...options });
+    if (typeof res === 'string' && (res.startsWith('[missing') || res.includes('missing "'))) {
+      return options?.defaultValue || options?.fallback || undefined;
+    }
+    return res;
   }, [locale]);
 
   return {

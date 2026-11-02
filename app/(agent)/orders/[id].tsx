@@ -37,10 +37,11 @@ export default function OrderDetailsScreen() {
       const data = await getOrderById(id as string);
       setOrder(data);
       if (data) {
+        const targetId = data.id || data._id || (id as string);
         const [delData, payData, settleData] = await Promise.all([
-          getDeliveryByOrderId(data.id),
-          getPaymentByOrderId(data.id),
-          getSettlementByOrderId(data.id)
+          getDeliveryByOrderId(targetId).catch(() => null),
+          getPaymentByOrderId(targetId).catch(() => null),
+          getSettlementByOrderId(targetId).catch(() => null)
         ]);
         setDelivery(delData);
         setPayment(payData);
@@ -98,7 +99,7 @@ export default function OrderDetailsScreen() {
   };
 
   const handleFarmerPress = () => {
-    if (order.farmer_id) {
+    if (order.farmer_id && order.farmers?.id) {
       router.push(`/farmers/${order.farmer_id}`);
     } else {
       setShowFarmerModal(true);
@@ -106,7 +107,7 @@ export default function OrderDetailsScreen() {
   };
 
   const handleBuyerPress = () => {
-    if (order.buyer_id) {
+    if (order.buyer_id && order.buyers?.id) {
       router.push(`/buyers/${order.buyer_id}`);
     } else {
       setShowBuyerModal(true);

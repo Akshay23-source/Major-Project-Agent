@@ -176,7 +176,7 @@ export default function DeliveriesScreen() {
               >
                 <View style={styles.cardHeader}>
                   <View>
-                    <Text style={styles.deliveryId}>{del.delivery_number || del.id.substring(0,8)}</Text>
+                    <Text style={styles.deliveryId}>{del.delivery_number || String(del.id || '').substring(0,8)}</Text>
                     {trackingId ? (
                       <Text style={{ fontSize: 11, color: Colors.primaryDark, fontWeight: '600' }}>TRK: {trackingId}</Text>
                     ) : null}

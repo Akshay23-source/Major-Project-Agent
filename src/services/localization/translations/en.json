@@ -79,7 +79,10 @@
   },
   "driver": {
     "dashboard": "Driver Dashboard",
+    "incoming": "Incoming Requests",
+    "awaiting": "Awaiting Pickup",
     "myDeliveries": "My Deliveries",
+    "deliveredToday": "Delivered Today",
     "currentDelivery": "Current Delivery",
     "goOnline": "Go Online",
     "goOffline": "Go Offline",
