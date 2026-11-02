@@ -186,6 +186,18 @@ const accept = async (driverId, id) => {
   // Synchronize to Main Marketplace
   await syncToMainApp(delivery.order_id);
 
+  // Notify agent that driver accepted delivery
+  const { notify } = require('./notificationService');
+  if (delivery.agent_id) {
+    await notify(delivery.agent_id, {
+      type: 'Delivery Update',
+      title: 'Order Accepted by Driver',
+      message: `Driver ${driver.name} accepted delivery ${delivery.delivery_number || ''}.`,
+      related_id: delivery._id,
+      related_type: 'delivery',
+    });
+  }
+
   return expand(serialize(delivery.toObject()));
 };
 
@@ -226,6 +238,18 @@ const reject = async (driverId, id, reason = 'Declined by driver') => {
       },
     }
   );
+
+  // Notify agent that driver declined delivery
+  const { notify: notifyAgent } = require('./notificationService');
+  if (delivery.agent_id) {
+    await notifyAgent(delivery.agent_id, {
+      type: 'Delivery Update',
+      title: 'Delivery Declined by Driver',
+      message: `Driver ${driver.name} declined delivery ${delivery.delivery_number || ''}: ${reason}. Returned to queue.`,
+      related_id: delivery._id,
+      related_type: 'delivery',
+    });
+  }
 
   return { success: true, message: 'Delivery rejected and returned to queue' };
 };

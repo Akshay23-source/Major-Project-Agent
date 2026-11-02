@@ -10,20 +10,37 @@ import {
   ActivityIndicator
 } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { getDeliveries } from '../../../src/services/deliveries';
 import { Colors } from '../../../src/theme/colors';
 import { StatusBadge } from '../../../src/components/ui/StatusBadge';
 
 export default function DeliveriesScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ filter?: string }>();
+
+  const getMappedFilter = (raw?: string) => {
+    const f = (raw || '').toLowerCase();
+    if (f.includes('await')) return 'Awaiting';
+    if (f.includes('transit') || f.includes('ongoing') || f.includes('out')) return 'In Transit';
+    if (f.includes('deliver') || f.includes('complete')) return 'Delivered';
+    if (f.includes('cancel')) return 'Cancelled';
+    return 'All';
+  };
+
   const [deliveries, setDeliveries] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState("All");
+  const [filterType, setFilterType] = useState(getMappedFilter(params.filter));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const filters = ["All", "Ongoing", "Completed", "Cancelled"];
+  const filters = ["All", "Awaiting", "In Transit", "Delivered", "Cancelled"];
+
+  React.useEffect(() => {
+    if (params.filter) {
+      setFilterType(getMappedFilter(params.filter));
+    }
+  }, [params.filter]);
 
   useFocusEffect(
     useCallback(() => {
@@ -48,26 +65,35 @@ export default function DeliveriesScreen() {
     return deliveries.filter(del => {
       const searchLower = searchQuery.toLowerCase();
       
-      const delId = del.delivery_number || del.id;
-      const empName = del.employees?.name || "";
-      const farmerName = del.orders?.farmers?.name || "";
-      const buyerName = del.orders?.buyers?.name || "";
+      const delId = del.delivery_number || del.id || "";
+      const trackingId = del.tracking_id || del.orders?.tracking_id || "";
+      const driverName = del.delivery_partners?.name || del.driver_name || del.orders?.accepted_by_driver_name || del.employees?.name || "";
+      const farmerName = del.orders?.farmers?.name || del.orders?.pickup_contact_name || "";
+      const buyerName = del.orders?.buyers?.name || del.orders?.customer_name || "";
       const product = del.orders?.product || "";
       
       const matchesSearch = !searchQuery || 
         delId.toLowerCase().includes(searchLower) ||
-        empName.toLowerCase().includes(searchLower) ||
+        trackingId.toLowerCase().includes(searchLower) ||
+        driverName.toLowerCase().includes(searchLower) ||
         farmerName.toLowerCase().includes(searchLower) ||
         buyerName.toLowerCase().includes(searchLower) ||
         product.toLowerCase().includes(searchLower);
       
+      const trackingStatus = (del.logistics_tracking_status || '').toUpperCase();
+      const status = del.status || '';
+
       let matchesFilter = true;
-      if (filterType === "Ongoing") {
-        matchesFilter = ['Pending', 'Assigned', 'Picked Up', 'In Transit'].includes(del.status);
-      } else if (filterType === "Completed") {
-        matchesFilter = del.status === 'Delivered';
+      if (filterType === "Awaiting") {
+        matchesFilter = ['ACCEPTED', 'DRIVER_EN_ROUTE', 'ARRIVED_AT_FARM', 'AWAITING_PICKUP', 'PICKUP_ASSIGNED'].includes(trackingStatus) ||
+          ['Pending', 'Assigned', 'Awaiting Pickup', 'Awaiting'].includes(status);
+      } else if (filterType === "In Transit") {
+        matchesFilter = ['PICKED_UP', 'IN_TRANSIT', 'ARRIVED_AT_DESTINATION', 'OUT_FOR_DELIVERY'].includes(trackingStatus) ||
+          ['Picked Up', 'In Transit', 'Out for Delivery'].includes(status);
+      } else if (filterType === "Delivered") {
+        matchesFilter = trackingStatus === 'DELIVERED' || status === 'Delivered' || status === 'Completed';
       } else if (filterType === "Cancelled") {
-        matchesFilter = del.status === 'Cancelled';
+        matchesFilter = trackingStatus === 'CANCELLED' || status === 'Cancelled';
       }
       
       return matchesSearch && matchesFilter;
@@ -134,45 +160,62 @@ export default function DeliveriesScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.listContainer}>
-          {filteredDeliveries.map((del) => (
-            <TouchableOpacity 
-              key={del.id} 
-              style={styles.card}
-              onPress={() => router.push(`/deliveries/${del.id}`)}
-            >
-              <View style={styles.cardHeader}>
-                <Text style={styles.deliveryId}>{del.delivery_number || del.id.substring(0,8)}</Text>
-                <StatusBadge status={del.status} />
-              </View>
-              
-              <Text style={styles.productName}>{del.orders?.product} • {del.orders?.quantity} {del.orders?.unit}</Text>
-              
-              <View style={styles.parties}>
-                <View style={styles.partyRow}>
-                  <Ionicons name="leaf-outline" size={14} color={Colors.textSecondary} style={styles.partyIcon} />
-                  <Text style={styles.partyText}>From: {del.orders?.farmers?.name || 'Unknown'}</Text>
-                </View>
-                <View style={styles.partyRow}>
-                  <Ionicons name="storefront-outline" size={14} color={Colors.textSecondary} style={styles.partyIcon} />
-                  <Text style={styles.partyText}>To: {del.orders?.buyers?.name || 'Unknown'}</Text>
-                </View>
-              </View>
+          {filteredDeliveries.map((del) => {
+            const driverName = del.delivery_partners?.name || del.driver_name || del.orders?.accepted_by_driver_name || del.employees?.name || 'Unassigned';
+            const vehicle = del.delivery_partners?.vehicle_number || del.delivery_partners?.vehicle_type || del.vehicles?.vehicle_number;
+            const fromLocation = del.orders?.farmers?.name || del.orders?.pickup_contact_name || del.pickup_location || 'Farm';
+            const toLocation = del.orders?.buyers?.name || del.orders?.customer_name || del.drop_location || 'Customer';
+            const trackingId = del.tracking_id || del.orders?.tracking_id;
+            const completionDate = del.delivery_time || del.completed_at;
 
-              <View style={styles.assignmentBox}>
-                <Text style={styles.assignLabel}>Assigned to:</Text>
-                <Text style={styles.assignValue}>{del.employees?.name || 'Unassigned'}</Text>
-              </View>
+            return (
+              <TouchableOpacity 
+                key={del.id} 
+                style={styles.card}
+                onPress={() => router.push(`/deliveries/${del.order_id || del.id}`)}
+              >
+                <View style={styles.cardHeader}>
+                  <View>
+                    <Text style={styles.deliveryId}>{del.delivery_number || del.id.substring(0,8)}</Text>
+                    {trackingId ? (
+                      <Text style={{ fontSize: 11, color: Colors.primaryDark, fontWeight: '600' }}>TRK: {trackingId}</Text>
+                    ) : null}
+                  </View>
+                  <StatusBadge status={del.logistics_tracking_status || del.status} />
+                </View>
+                
+                <Text style={styles.productName}>{del.orders?.product || 'Agricultural Goods'} • {del.orders?.quantity || 1} {del.orders?.unit || 'units'}</Text>
+                
+                <View style={styles.parties}>
+                  <View style={styles.partyRow}>
+                    <Ionicons name="leaf-outline" size={14} color={Colors.textSecondary} style={styles.partyIcon} />
+                    <Text style={styles.partyText} numberOfLines={1}>From: {fromLocation}</Text>
+                  </View>
+                  <View style={styles.partyRow}>
+                    <Ionicons name="storefront-outline" size={14} color={Colors.textSecondary} style={styles.partyIcon} />
+                    <Text style={styles.partyText} numberOfLines={1}>To: {toLocation}</Text>
+                  </View>
+                </View>
 
-              <View style={styles.cardFooter}>
-                <Text style={styles.dateText}>
-                  {new Date(del.created_at).toLocaleDateString()}
-                </Text>
-                {del.eta && (
-                  <Text style={styles.etaText}>ETA: {del.eta}</Text>
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
+                <View style={styles.assignmentBox}>
+                  <Text style={styles.assignLabel}>Assigned Driver:</Text>
+                  <Text style={styles.assignValue}>{driverName}{vehicle ? ` (${vehicle})` : ''}</Text>
+                </View>
+
+                <View style={styles.cardFooter}>
+                  <Text style={styles.dateText}>
+                    {completionDate 
+                      ? `Delivered: ${new Date(completionDate).toLocaleDateString()} ${new Date(completionDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                      : `Created: ${new Date(del.created_at).toLocaleDateString()}`
+                    }
+                  </Text>
+                  {del.eta && !completionDate && (
+                    <Text style={styles.etaText}>ETA: {del.eta}</Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       )}
     </SafeAreaView>

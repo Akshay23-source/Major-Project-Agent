@@ -135,8 +135,24 @@ const updateStatus = async (agentId, id, status, cancellationReason) => {
 
 /** Dispatch screen: order + its latest delivery + that delivery's timeline. */
 const dispatchView = async (agentId, id) => {
-  const order = await get(agentId, id);
-  const delivery = await DeliveryJob.findOne({ order_id: id, agent_id: agentId }).sort({ created_at: -1 }).lean();
+  let order;
+  try {
+    order = await get(agentId, id);
+  } catch (err) {
+    // If id was a delivery_id, find the delivery and get its order_id
+    const d = await DeliveryJob.findById(id).lean();
+    if (d && d.order_id) {
+      order = await get(agentId, d.order_id);
+    } else {
+      throw err;
+    }
+  }
+  const orderId = order.id || order._id;
+  const allowed = await getAllowedAgentIds(agentId);
+  const delivery = await DeliveryJob.findOne({
+    $or: [{ order_id: orderId }, { _id: id }],
+    agent_id: { $in: allowed },
+  }).sort({ created_at: -1 }).lean();
   const events = delivery ? await DeliveryEvent.find({ delivery_id: delivery._id }).sort({ created_at: 1 }).lean() : [];
   return { order, delivery: serialize(delivery), events: serialize(events) };
 };

@@ -6,16 +6,8 @@ import { DriverLocation } from '../../services/tracking';
 import L from 'leaflet';
 
 // Icons using reliable Leaflet standard CDN assets with distinct colors
-const driverIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
-
-const pickupIcon = new L.Icon({
+// Green: Active delivering driver
+const activeDriverIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize: [25, 41],
@@ -24,8 +16,29 @@ const pickupIcon = new L.Icon({
   shadowSize: [41, 41],
 });
 
-const dropIcon = new L.Icon({
+// Red: Available / Free driver (not currently delivering)
+const freeDriverIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+// Gold/Yellow: Farm Pickup
+const pickupIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+// Blue: Buyer Delivery Destination
+const dropIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize: [25, 41],
   iconAnchor: [12, 41],
@@ -122,12 +135,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           const driverName = driver.driver?.name || `Driver ${driver.delivery_partner_id.slice(-6)}`;
           const orderNum = driver.delivery?.order?.order_number;
           const status = driver.delivery?.logistics_tracking_status || driver.driver?.status || 'Active';
+          const isActive = !!driver.delivery_id;
 
           return (
             <Marker
               key={driver.id || driver.delivery_partner_id}
               position={[driver.latitude, driver.longitude]}
-              icon={driverIcon}
+              icon={isActive ? activeDriverIcon : freeDriverIcon}
               eventHandlers={{
                 click: () => onDriverPress && onDriverPress(driver),
               }}
@@ -164,11 +178,11 @@ export const LiveMap: React.FC<LiveMapProps> = ({
                         borderRadius: 10,
                         fontSize: 11,
                         fontWeight: 'bold',
-                        backgroundColor: '#E0F2FE',
-                        color: '#0369A1',
+                        backgroundColor: isActive ? '#DCFCE7' : '#FEE2E2',
+                        color: isActive ? '#15803D' : '#B91C1C',
                       }}
                     >
-                      {status}
+                      {isActive ? `Delivering • ${status}` : 'Available'}
                     </span>
                   </div>
                   <div style={{ marginTop: 6, fontSize: 11, color: stale ? '#DC2626' : '#16A34A' }}>
@@ -196,16 +210,20 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       {/* Map Marker Legend */}
       <View style={styles.legendOverlay}>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#2563EB' }]} />
-          <Text style={styles.legendText}>Driver (Active / Live)</Text>
-        </View>
-        <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: '#16A34A' }]} />
-          <Text style={styles.legendText}>Pickup Location</Text>
+          <Text style={styles.legendText}>Active Delivering Driver</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: '#DC2626' }]} />
-          <Text style={styles.legendText}>Drop / Destination</Text>
+          <Text style={styles.legendText}>Available / Free Driver</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#EAB308' }]} />
+          <Text style={styles.legendText}>Pickup (Farm)</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#2563EB' }]} />
+          <Text style={styles.legendText}>Destination (Buyer)</Text>
         </View>
       </View>
     </View>

@@ -2,35 +2,75 @@
  * Delivery records as the Deliveries / Employees screens see them, plus the
  * single-step logistics helpers (assign partner / vehicle, status, pickups, timeline).
  */
-const { DeliveryJob, DeliveryEvent, Order, Farmer, Buyer, Employee, Driver, Vehicle, Pickup } = require('../models');
+const { DeliveryJob, DeliveryEvent, Order, Farmer, Buyer, Employee, Driver, Vehicle, Pickup, Agent } = require('../models');
 const { serialize, attach } = require('../utils/serialize');
 const { notify } = require('./notificationService');
 const deliveryService = require('./deliveryService');
 const { badRequest, notFound, conflict } = require('../utils/http');
+const env = require('../config/env');
+
+const getAllowedAgentIds = async (agentId) => {
+  const allowed = [agentId];
+  if (env.marketplace?.defaultAgentEmail) {
+    const def = await Agent.findOne({ email: env.marketplace.defaultAgentEmail }).lean();
+    if (def && String(def._id) !== String(agentId)) allowed.push(def._id);
+  }
+  const generic = await Agent.findOne({ email: 'agent@gmail.com' }).lean();
+  if (generic && String(generic._id) !== String(agentId)) allowed.push(generic._id);
+  return allowed;
+};
 
 const withOrderAndEmployee = async (items, agentId, { farmer = 'name', buyer = 'name' } = {}) => {
-  await attach(items, { from: 'order_id', as: 'orders', model: Order, select: 'order_number product quantity unit farmer_id buyer_id logistics_status verification_status customer_verification accepted_by_driver_name accepted_at', filter: { agent_id: agentId } });
+  await attach(items, { from: 'order_id', as: 'orders', model: Order, select: 'order_number product quantity unit farmer_id buyer_id logistics_status verification_status customer_verification accepted_by_driver_name accepted_at pickup_address delivery_location tracking_id customer_name' });
   const orders = (Array.isArray(items) ? items : [items]).map((i) => i.orders).filter(Boolean);
-  await attach(orders, { from: 'farmer_id', as: 'farmers', model: Farmer, select: farmer, filter: { agent_id: agentId } });
-  await attach(orders, { from: 'buyer_id', as: 'buyers', model: Buyer, select: buyer, filter: { agent_id: agentId } });
-  await attach(items, { from: 'employee_id', as: 'employees', model: Employee, select: 'name phone', filter: { agent_id: agentId } });
-  await attach(items, { from: 'delivery_partner_id', as: 'delivery_partners', model: Driver, select: 'name phone vehicle_type vehicle_number rating completed_deliveries', filter: { agent_id: agentId } });
+  await attach(orders, { from: 'farmer_id', as: 'farmers', model: Farmer, select: farmer });
+  await attach(orders, { from: 'buyer_id', as: 'buyers', model: Buyer, select: buyer });
+  await attach(items, { from: 'employee_id', as: 'employees', model: Employee, select: 'name phone' });
+  await attach(items, { from: 'delivery_partner_id', as: 'delivery_partners', model: Driver, select: 'name phone vehicle_type vehicle_number rating completed_deliveries' });
   await attach(items, { from: 'vehicle_id', as: 'vehicles', model: Vehicle, select: 'vehicle_number vehicle_type' });
+
+  // Fallback for marketplace orders / drivers
+  (Array.isArray(items) ? items : [items]).forEach((item) => {
+    if (!item) return;
+    if (!item.delivery_partners && (item.driver_name || item.orders?.accepted_by_driver_name)) {
+      item.delivery_partners = {
+        name: item.driver_name || item.orders?.accepted_by_driver_name,
+        vehicle_type: 'Standard Delivery',
+      };
+    }
+  });
+
   return items;
 };
 
 const owned = async (agentId, id) => {
-  const d = await DeliveryJob.findOne({ _id: id, agent_id: agentId });
+  const allowed = await getAllowedAgentIds(agentId);
+  const d = await DeliveryJob.findOne({
+    _id: id,
+    $or: [{ agent_id: { $in: allowed } }, { agent_id: null }, { agent_id: { $exists: false } }],
+  });
   if (!d) throw notFound('Delivery not found');
   return d;
 };
 
-const list = async (agentId) => withOrderAndEmployee(serialize(await DeliveryJob.find({ agent_id: agentId }).sort({ created_at: -1 }).lean()), agentId);
+const list = async (agentId) => {
+  const allowed = await getAllowedAgentIds(agentId);
+  const docs = await DeliveryJob.find({
+    $or: [{ agent_id: { $in: allowed } }, { agent_id: null }, { agent_id: { $exists: false } }],
+  }).sort({ created_at: -1 }).lean();
+  return withOrderAndEmployee(serialize(docs), agentId);
+};
 
 const get = async (agentId, id) =>
   withOrderAndEmployee(serialize((await owned(agentId, id)).toObject()), agentId, { farmer: 'name phone village', buyer: 'name phone location' });
 
-const byOrder = (agentId, orderId) => DeliveryJob.findOne({ agent_id: agentId, order_id: orderId }).sort({ created_at: -1 }).lean();
+const byOrder = async (agentId, orderId) => {
+  const allowed = await getAllowedAgentIds(agentId);
+  return DeliveryJob.findOne({
+    $or: [{ agent_id: { $in: allowed } }, { agent_id: null }, { agent_id: { $exists: false } }],
+    order_id: orderId,
+  }).sort({ created_at: -1 }).lean();
+};
 
 const byEmployee = async (agentId, employeeId) =>
   withOrderAndEmployee(serialize(await DeliveryJob.find({ agent_id: agentId, employee_id: employeeId }).sort({ created_at: -1 }).lean()), agentId);

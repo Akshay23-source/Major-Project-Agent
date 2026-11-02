@@ -77,6 +77,8 @@ export interface Delivery {
 // ── Delivery partners (drivers) ──────────────
 export const getDeliveryPartners = () => api.get<DeliveryPartner[]>('/drivers');
 
+export const getDeliveryPartnerDetails = (id: string) => api.get<any>(`/drivers/${id}`);
+
 export const getAvailablePartners = () => api.get<DeliveryPartner[]>('/drivers', { status: 'ONLINE,AVAILABLE' });
 
 export const createDeliveryPartner = (data: {

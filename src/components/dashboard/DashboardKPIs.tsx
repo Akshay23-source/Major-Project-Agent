@@ -91,7 +91,7 @@ export default function DashboardKPIs({ role }: DashboardKPIsProps) {
             value={data.awaitingPickup}
             icon="time"
             color={Colors.warning}
-            onPress={() => router.push('/logistics/workspace' as any)}
+            onPress={() => router.push('/deliveries?filter=Awaiting' as any)}
           />
         </View>
         <View style={styles.row}>
@@ -100,14 +100,14 @@ export default function DashboardKPIs({ role }: DashboardKPIsProps) {
             value={data.outForDelivery}
             icon="bicycle"
             color={Colors.primaryDark}
-            onPress={() => router.push('/logistics/map' as any)}
+            onPress={() => router.push('/deliveries?filter=In%20Transit' as any)}
           />
           <SummaryCard
             title="Delivered Today"
             value={data.deliveredToday}
             icon="checkmark-circle"
             color={Colors.success}
-            onPress={() => router.push('/deliveries' as any)}
+            onPress={() => router.push('/deliveries?filter=Delivered' as any)}
           />
         </View>
         {(data.totalDrivers > 0 || data.awaitingVerification > 0) && (

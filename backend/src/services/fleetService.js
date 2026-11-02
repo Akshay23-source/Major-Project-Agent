@@ -60,6 +60,71 @@ const updateDriver = async (agentId, id, data) => {
   return Driver.findById(id).lean();
 };
 
+const getDriverDetails = async (agentId, id) => {
+  const driver = await Driver.findById(id).lean();
+  if (!driver) throw notFound('Delivery partner not found');
+
+  // Find active assignment
+  const activeJob = await DeliveryJob.findOne({
+    delivery_partner_id: driver._id,
+    status: { $nin: ['DELIVERED', 'CANCELLED', 'FAILED_DELIVERY', 'RETURNED', 'Delivered', 'Cancelled'] },
+  }).sort({ created_at: -1 }).lean();
+
+  if (activeJob) {
+    const activeOrder = await Order.findById(activeJob.order_id)
+      .select('order_number product quantity unit pickup_address delivery_location tracking_id customer_name customer_phone')
+      .lean();
+
+    driver.current_assignment = {
+      delivery_id: String(activeJob._id),
+      delivery_number: activeJob.delivery_number,
+      status: activeJob.status,
+      logistics_tracking_status: activeJob.logistics_tracking_status,
+      order_number: activeOrder?.order_number || '',
+      product: activeOrder?.product || '',
+      quantity: activeOrder?.quantity,
+      unit: activeOrder?.unit,
+      pickup_address: activeJob.pickup_location || activeOrder?.pickup_address || '',
+      delivery_address: activeJob.drop_location || activeOrder?.delivery_location || '',
+      customer_name: activeOrder?.customer_name || '',
+      customer_phone: activeOrder?.customer_phone || '',
+      accepted_at: activeJob.accepted_at,
+      pickup_time: activeJob.pickup_time,
+    };
+  } else {
+    driver.current_assignment = null;
+  }
+
+  // Find complete delivery history
+  const history = await DeliveryJob.find({
+    delivery_partner_id: driver._id,
+  }).sort({ created_at: -1 }).limit(50).lean();
+
+  const historyWithOrders = await Promise.all(
+    history.map(async (job) => {
+      const ord = await Order.findById(job.order_id)
+        .select('order_number product quantity unit total_amount pickup_address delivery_location customer_name')
+        .lean();
+      return {
+        ...job,
+        order: ord ? {
+          order_number: ord.order_number,
+          product: ord.product,
+          quantity: ord.quantity,
+          unit: ord.unit,
+          total_amount: ord.total_amount,
+          pickup_address: ord.pickup_address,
+          delivery_location: ord.delivery_location,
+          customer_name: ord.customer_name,
+        } : null,
+      };
+    })
+  );
+
+  driver.delivery_history = historyWithOrders;
+  return driver;
+};
+
 const getDriverSelf = (driverId) => Driver.findById(driverId).lean();
 
 const setDriverStatus = async (driverId, status) => {
@@ -83,4 +148,4 @@ const updateVehicle = async (agentId, id, data) => {
   return v;
 };
 
-module.exports = { listDrivers, createDriver, updateDriver, getDriverSelf, setDriverStatus, listVehicles, createVehicle, updateVehicle };
+module.exports = { listDrivers, createDriver, updateDriver, getDriverDetails, getDriverSelf, setDriverStatus, listVehicles, createVehicle, updateVehicle };

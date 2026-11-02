@@ -33,7 +33,10 @@ const AGENT_NAV_ITEMS = [
 
 const DRIVER_NAV_ITEMS = [
   { nameKey: 'driver.dashboard', fallback: 'Driver Dashboard', route: '/(driver)/dashboard', icon: 'home-outline' },
-  { nameKey: 'driver.myDeliveries', fallback: 'My Deliveries', route: '/(driver)/deliveries', icon: 'cube-outline' },
+  { nameKey: 'driver.incoming', fallback: 'Incoming Requests', route: '/(driver)/incoming', icon: 'cube-outline' },
+  { nameKey: 'driver.awaiting', fallback: 'Awaiting Pickup', route: '/(driver)/awaiting', icon: 'time-outline' },
+  { nameKey: 'driver.myDeliveries', fallback: 'Active Deliveries', route: '/(driver)/deliveries', icon: 'bicycle-outline' },
+  { nameKey: 'driver.deliveredToday', fallback: 'Delivered Today', route: '/(driver)/delivered-today', icon: 'checkmark-circle-outline' },
 ];
 
 export const Sidebar = () => {

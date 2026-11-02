@@ -46,13 +46,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   if (MapViewComponent && MarkerComponent) {
     return (
       <View style={styles.container}>
-        <MapViewComponent style={StyleSheet.absoluteFillObject} initialRegion={initialRegion}>
+        <MapViewComponent style={StyleSheet.absoluteFill} initialRegion={initialRegion}>
           {pickupLocation && (
             <MarkerComponent
               coordinate={{ latitude: pickupLocation.lat, longitude: pickupLocation.lng }}
               title="📍 Pickup Location"
               description={pickupLocation.label || 'Farm / Warehouse'}
-              pinColor="#16A34A"
+              pinColor="#EAB308"
             />
           )}
 
@@ -61,7 +61,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
               coordinate={{ latitude: dropLocation.lat, longitude: dropLocation.lng }}
               title="🏁 Destination"
               description={dropLocation.label || 'Customer Delivery Address'}
-              pinColor="#DC2626"
+              pinColor="#2563EB"
             />
           )}
 
@@ -73,8 +73,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
                 key={driver.id || driver.delivery_partner_id}
                 coordinate={{ latitude: driver.latitude, longitude: driver.longitude }}
                 title={`🚚 ${name}`}
-                description={`Speed: ${Math.round(driver.speed || 0)} km/h | Status: ${driver.delivery?.logistics_tracking_status || 'Active'}`}
-                pinColor={isAssigned ? '#2563EB' : '#16A34A'}
+                description={`Speed: ${Math.round(driver.speed || 0)} km/h | Status: ${driver.delivery?.logistics_tracking_status || (isAssigned ? 'Delivering' : 'Available')}`}
+                pinColor={isAssigned ? '#16A34A' : '#DC2626'}
                 onPress={() => onDriverPress && onDriverPress(driver)}
               />
             );
@@ -92,16 +92,20 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         {/* Legend */}
         <View style={styles.legendOverlay}>
           <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#2563EB' }]} />
-            <Text style={styles.legendText}>Active Driver / Assigned</Text>
-          </View>
-          <View style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: '#16A34A' }]} />
-            <Text style={styles.legendText}>Available / Pickup</Text>
+            <Text style={styles.legendText}>Active Delivering Driver</Text>
           </View>
           <View style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: '#DC2626' }]} />
-            <Text style={styles.legendText}>Destination</Text>
+            <Text style={styles.legendText}>Available / Free Driver</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#EAB308' }]} />
+            <Text style={styles.legendText}>Pickup (Farm)</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#2563EB' }]} />
+            <Text style={styles.legendText}>Destination (Buyer)</Text>
           </View>
         </View>
       </View>

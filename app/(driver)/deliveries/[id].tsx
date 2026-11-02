@@ -19,6 +19,32 @@ import { startLocationTracking, stopLocationTracking } from "../../../src/servic
 import { useLocalization } from "../../../src/hooks/useLocalization";
 import * as Linking from "expo-linking";
 
+const TRACKING_STAGES = [
+  { key: 'placed', label: 'Placed' },
+  { key: 'accepted', label: 'Accepted' },
+  { key: 'picked_up', label: 'Picked Up' },
+  { key: 'out_for_delivery', label: 'Out for Delivery' },
+  { key: 'reached', label: 'Reached' },
+  { key: 'delivered', label: 'Delivered' },
+];
+
+function getStageIndex(status?: string): number {
+  const s = (status || '').toUpperCase();
+  switch (s) {
+    case 'DELIVERED': return 5;
+    case 'ARRIVED_AT_DESTINATION':
+    case 'NEAR_DESTINATION': return 4;
+    case 'OUT_FOR_DELIVERY':
+    case 'IN_TRANSIT': return 3;
+    case 'PICKED_UP':
+    case 'ARRIVED_AT_FARM': return 2;
+    case 'ACCEPTED':
+    case 'DRIVER_EN_ROUTE':
+    case 'PICKUP_ASSIGNED': return 1;
+    default: return 0;
+  }
+}
+
 export default function DeliveryDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -155,21 +181,78 @@ export default function DeliveryDetailsScreen() {
   const farmer = order?.farmers;
   const buyer = order?.buyers;
 
+  const farmerName = farmer?.name || order?.pickup_contact_name || 'Farmer / Supplier';
+  const farmerPhone = farmer?.phone || order?.pickup_contact_phone;
+  const farmerAddress = [farmer?.address, farmer?.village].filter(Boolean).join(', ') || order?.pickup_address || 'Farm location';
+
+  const buyerName = buyer?.name || order?.customer_name || 'Customer / Buyer';
+  const buyerPhone = buyer?.phone || order?.customer_phone;
+  const buyerAddress = [buyer?.address, buyer?.pincode].filter(Boolean).join(', ') || order?.delivery_location || 'Customer destination';
+
+  const trackingId = delivery.tracking_id || order?.tracking_id;
+  const currentStageIdx = getStageIndex(delivery.logistics_tracking_status);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color={Colors.primaryDark} />
         </TouchableOpacity>
-        <Text style={styles.title}>Order #{order?.order_number}</Text>
+        <Text style={styles.title}>Order #{order?.order_number || delivery.delivery_number}</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         
-        {/* Status Badge */}
+        {/* Tracking Banner & Status */}
         <View style={styles.statusBadge}>
           <Text style={styles.statusText}>{delivery.logistics_tracking_status}</Text>
+          {trackingId ? (
+            <Text style={{ fontSize: 12, color: Colors.primaryDark, marginTop: 4, fontWeight: '600' }}>
+              Tracking ID: {trackingId}
+            </Text>
+          ) : null}
+        </View>
+
+        {/* Tracking Timeline */}
+        <View style={styles.timelineCard}>
+          <Text style={styles.timelineTitle}>Delivery Progress</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timelineScroll}>
+            {TRACKING_STAGES.map((stage, idx) => {
+              const isCompleted = idx <= currentStageIdx;
+              const isCurrent = idx === currentStageIdx;
+              return (
+                <View key={stage.key} style={styles.timelineStepWrap}>
+                  <View style={styles.stepTopRow}>
+                    <View style={[
+                      styles.stepCircle,
+                      isCompleted && styles.stepCircleCompleted,
+                      isCurrent && styles.stepCircleCurrent
+                    ]}>
+                      {isCompleted && !isCurrent ? (
+                        <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                      ) : (
+                        <View style={[styles.innerDot, isCurrent && styles.innerDotActive]} />
+                      )}
+                    </View>
+                    {idx < TRACKING_STAGES.length - 1 && (
+                      <View style={[
+                        styles.stepConnector,
+                        idx < currentStageIdx && styles.stepConnectorCompleted
+                      ]} />
+                    )}
+                  </View>
+                  <Text style={[
+                    styles.stepLabel,
+                    isCurrent && styles.stepLabelCurrent,
+                    isCompleted && styles.stepLabelCompleted
+                  ]}>
+                    {stage.label}
+                  </Text>
+                </View>
+              );
+            })}
+          </ScrollView>
         </View>
 
         {/* Action Button */}
@@ -177,33 +260,49 @@ export default function DeliveryDetailsScreen() {
           {getNextStateButton()}
         </View>
 
+        {/* Delivery Instructions / Notes */}
+        {(order?.notes || delivery.notes) ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Delivery Instructions</Text>
+            <Text style={styles.notesText}>{order?.notes || delivery.notes}</Text>
+          </View>
+        ) : null}
+
         {/* Order Info */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Order Information</Text>
           <View style={styles.row}>
             <Text style={styles.label}>Product:</Text>
-            <Text style={styles.value}>{order?.product}</Text>
+            <Text style={styles.value}>{order?.product || 'Produce'}</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Quantity:</Text>
             <Text style={styles.value}>{order?.quantity} {order?.unit}</Text>
           </View>
+          {order?.total_amount ? (
+            <View style={styles.row}>
+              <Text style={styles.label}>Amount:</Text>
+              <Text style={[styles.value, { fontWeight: 'bold' }]}>₹{order.total_amount} ({order.payment_status || 'PAID'})</Text>
+            </View>
+          ) : null}
           {order?.is_perishable && <Text style={styles.tagError}>Perishable</Text>}
           {order?.is_fragile && <Text style={styles.tagWarning}>Fragile</Text>}
         </View>
 
         {/* Pickup Info */}
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Pickup (Farmer)</Text>
-          <Text style={styles.contactName}>{farmer?.name}</Text>
-          <Text style={styles.address}>{farmer?.address}, {farmer?.village}</Text>
+          <Text style={styles.sectionTitle}>Pickup (Farmer / Supplier)</Text>
+          <Text style={styles.contactName}>{farmerName}</Text>
+          <Text style={styles.address}>{farmerAddress}</Text>
           
           <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.iconButton} onPress={() => openPhone(farmer?.phone)}>
-              <Ionicons name="call" size={20} color={Colors.primary} />
-              <Text style={styles.iconButtonText}>Call</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton} onPress={() => openMap(`${farmer?.address} ${farmer?.village}`)}>
+            {farmerPhone ? (
+              <TouchableOpacity style={styles.iconButton} onPress={() => openPhone(farmerPhone)}>
+                <Ionicons name="call" size={20} color={Colors.primary} />
+                <Text style={styles.iconButtonText}>Call</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity style={styles.iconButton} onPress={() => openMap(farmerAddress)}>
               <Ionicons name="navigate" size={20} color={Colors.primary} />
               <Text style={styles.iconButtonText}>Navigate</Text>
             </TouchableOpacity>
@@ -213,15 +312,17 @@ export default function DeliveryDetailsScreen() {
         {/* Dropoff Info */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Drop-off (Customer)</Text>
-          <Text style={styles.contactName}>{buyer?.name}</Text>
-          <Text style={styles.address}>{buyer?.address}, {buyer?.pincode}</Text>
+          <Text style={styles.contactName}>{buyerName}</Text>
+          <Text style={styles.address}>{buyerAddress}</Text>
           
           <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.iconButton} onPress={() => openPhone(buyer?.phone)}>
-              <Ionicons name="call" size={20} color={Colors.primary} />
-              <Text style={styles.iconButtonText}>Call</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton} onPress={() => openMap(`${buyer?.address} ${buyer?.pincode}`)}>
+            {buyerPhone ? (
+              <TouchableOpacity style={styles.iconButton} onPress={() => openPhone(buyerPhone)}>
+                <Ionicons name="call" size={20} color={Colors.primary} />
+                <Text style={styles.iconButtonText}>Call</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity style={styles.iconButton} onPress={() => openMap(buyerAddress)}>
               <Ionicons name="navigate" size={20} color={Colors.primary} />
               <Text style={styles.iconButtonText}>Navigate</Text>
             </TouchableOpacity>
@@ -317,5 +418,22 @@ const styles = StyleSheet.create({
   confirmButton: { backgroundColor: Colors.primary, paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 16 },
   confirmButtonText: { color: Colors.surface, fontSize: 18, fontWeight: 'bold' },
   cancelButton: { paddingVertical: 16, alignItems: 'center' },
-  cancelButtonText: { color: Colors.textSecondary, fontSize: 16, fontWeight: '600' }
+  cancelButtonText: { color: Colors.textSecondary, fontSize: 16, fontWeight: '600' },
+
+  timelineCard: { backgroundColor: Colors.surface, padding: 16, borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: Colors.border },
+  timelineTitle: { fontSize: 15, fontWeight: 'bold', color: Colors.text, marginBottom: 12 },
+  timelineScroll: { paddingVertical: 4, alignItems: 'center' },
+  timelineStepWrap: { alignItems: 'center', width: 90 },
+  stepTopRow: { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'center' },
+  stepCircle: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', zIndex: 2 },
+  stepCircleCompleted: { backgroundColor: Colors.primary },
+  stepCircleCurrent: { backgroundColor: Colors.primary, borderWidth: 2, borderColor: '#FFFFFF' },
+  innerDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#9CA3AF' },
+  innerDotActive: { backgroundColor: '#FFFFFF' },
+  stepConnector: { position: 'absolute', right: -45, left: 45, height: 2, backgroundColor: '#E5E7EB', zIndex: 1 },
+  stepConnectorCompleted: { backgroundColor: Colors.primary },
+  stepLabel: { fontSize: 11, color: Colors.textLight, marginTop: 6, textAlign: 'center', fontWeight: '500' },
+  stepLabelCurrent: { color: Colors.primaryDark, fontWeight: 'bold' },
+  stepLabelCompleted: { color: Colors.text },
+  notesText: { fontSize: 14, color: Colors.text, lineHeight: 20 }
 });

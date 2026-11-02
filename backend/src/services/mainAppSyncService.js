@@ -15,6 +15,7 @@
 const mongoose = require('mongoose');
 const env = require('../config/env');
 const { Order, Agent, DeliveryJob, Driver, Counter } = require('../models');
+const { notify } = require('./notificationService');
 
 const toObjectId = (id) => {
   if (!id) return null;
@@ -269,6 +270,17 @@ const syncFromMainApp = async (targetAgentId = null) => {
           },
         }
       );
+
+      // Notify agent of new marketplace order
+      if (agent && agent._id) {
+        await notify(agent._id, {
+          type: 'Order Update',
+          title: 'New Marketplace Order',
+          message: `New order ${newOrder.order_number} received for ${newOrder.product} (${newOrder.quantity} ${newOrder.unit || 'units'}).`,
+          related_id: newOrder._id,
+          related_type: 'order',
+        });
+      }
     }
 
     console.log(`[mainAppSync] Completed sync: ${syncedCount} new orders imported, ${updatedCount} updated (out of ${mainOrders.length} total)`);

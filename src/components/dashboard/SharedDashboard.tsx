@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { ScrollView, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { AppHeader } from '../ui/AppHeader';
@@ -8,6 +8,7 @@ import { getSession, Role, signOut } from '../../lib/api';
 import { Colors } from '../../theme/colors';
 import DashboardKPIs from './DashboardKPIs';
 import OrderList from './OrderList';
+import { getDriverProfile, updateDriverStatus } from '../../services/driver/deliveries';
 
 interface SharedDashboardProps {
   role: Role;
@@ -18,7 +19,34 @@ export default function SharedDashboard({ role }: SharedDashboardProps) {
   const activeRole = role || session?.role;
   const router = useRouter();
 
+  const [driverStatus, setDriverStatus] = useState<string>('ONLINE');
+  const [statusLoading, setStatusLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeRole === 'driver') {
+      getDriverProfile()
+        .then((profile) => {
+          if (profile?.status) setDriverStatus(profile.status);
+        })
+        .catch(() => {});
+    }
+  }, [activeRole]);
+
   if (!activeRole) return null;
+
+  const handleToggleStatus = async () => {
+    if (statusLoading) return;
+    const nextStatus = driverStatus === 'OFFLINE' ? 'ONLINE' : 'OFFLINE';
+    setStatusLoading(true);
+    try {
+      await updateDriverStatus(nextStatus);
+      setDriverStatus(nextStatus);
+    } catch (e) {
+      console.error('Failed to update driver status:', e);
+    } finally {
+      setStatusLoading(false);
+    }
+  };
 
   const handleSwitchToAgent = async () => {
     await signOut();
@@ -41,18 +69,42 @@ export default function SharedDashboard({ role }: SharedDashboardProps) {
               <View>
                 <Text style={styles.driverBannerTitle}>Driver Mode</Text>
                 <Text style={styles.driverBannerSubtitle}>
-                  Logged in as {session?.user?.name || session?.user?.phone || 'Driver'}
+                  {session?.user?.name || session?.user?.phone || 'Driver'}
                 </Text>
               </View>
             </View>
-            <TouchableOpacity
-              style={styles.switchButton}
-              onPress={handleSwitchToAgent}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="swap-horizontal" size={16} color="#FFFFFF" />
-              <Text style={styles.switchButtonText}>Switch to Agent</Text>
-            </TouchableOpacity>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <TouchableOpacity
+                style={[
+                  styles.statusToggleBtn,
+                  { backgroundColor: driverStatus === 'OFFLINE' ? '#6B7280' : '#16A34A' }
+                ]}
+                onPress={handleToggleStatus}
+                activeOpacity={0.8}
+                disabled={statusLoading}
+              >
+                {statusLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <View style={styles.statusDot} />
+                    <Text style={styles.statusToggleText}>
+                      {driverStatus === 'OFFLINE' ? 'Offline' : 'Online'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.switchButton}
+                onPress={handleSwitchToAgent}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="swap-horizontal" size={16} color="#FFFFFF" />
+                <Text style={styles.switchButtonText}>Agent</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
         <DashboardKPIs role={activeRole} />
@@ -115,6 +167,25 @@ const styles = StyleSheet.create({
   switchButtonText: {
     color: '#FFFFFF',
     fontSize: 13,
+    fontWeight: '700',
+  },
+  statusToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    gap: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FFFFFF',
+  },
+  statusToggleText: {
+    color: '#FFFFFF',
+    fontSize: 12,
     fontWeight: '700',
   },
 });

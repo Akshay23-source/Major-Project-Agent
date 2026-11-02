@@ -17,6 +17,7 @@ r.patch('/agent/me', agent.updateMe);
 
 // Fleet
 r.get('/drivers', fleet.listDrivers);
+r.get('/drivers/:id', fleet.getDriver);
 r.post('/drivers', fleet.createDriver);
 r.patch('/drivers/:id', fleet.updateDriver);
 r.get('/vehicles', fleet.listVehicles);

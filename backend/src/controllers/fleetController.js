@@ -28,6 +28,7 @@ const vehicleUpdate = vehicleCreate.partial().extend({ availability_status: z.en
 
 module.exports = {
   listDrivers: async (req, res) => res.json(serialize(await fleet.listDrivers(req.user.agentId, { status: statusList(req.query.status) }))),
+  getDriver: async (req, res) => res.json(serialize(await fleet.getDriverDetails(req.user.agentId, requireId(req.params.id)))),
   createDriver: async (req, res) => res.status(201).json(serialize(await fleet.createDriver(req.user.agentId, parse(driverCreate, req.body)))),
   updateDriver: async (req, res) => res.json(serialize(await fleet.updateDriver(req.user.agentId, requireId(req.params.id), parse(driverUpdate, req.body)))),
 

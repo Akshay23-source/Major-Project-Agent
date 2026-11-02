@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions, FlatList, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { AppHeader } from '../../../src/components/ui/AppHeader';
 import { Colors } from '../../../src/theme/colors';
 import { getAllDriverLocations, subscribeToAllDriverLocations } from '../../../src/services/logistics/location';
@@ -19,6 +20,8 @@ export default function LogisticsMapScreen() {
   const [partners, setPartners] = useState<Record<string, DeliveryPartner>>({});
   const [selectedDriver, setSelectedDriver] = useState<DriverLocation | null>(null);
   const [routeGeometry, setRouteGeometry] = useState<{ lat: number, lng: number }[]>([]);
+  const [pickupLocation, setPickupLocation] = useState<{ lat: number; lng: number; label?: string } | undefined>();
+  const [dropLocation, setDropLocation] = useState<{ lat: number; lng: number; label?: string } | undefined>();
 
   useEffect(() => {
     loadInitialData();
@@ -71,45 +74,56 @@ export default function LogisticsMapScreen() {
         if (points && points.length > 0) {
           const trail = points.map((p: any) => ({ lat: p.latitude, lng: p.longitude }));
           setRouteGeometry(trail);
-          return;
         }
       } catch (err) {
         console.warn('Could not fetch delivery trail points:', err);
       }
-    }
 
-    // Use actual order destination if available
-    try {
-      const { api } = require('../../../src/lib/api');
-      const delivery = await api.get(`/driver/deliveries/${driver.delivery_id}`) as any;
+      // Fetch delivery details for pickup and drop coordinates
+      try {
+        const { api } = require('../../../src/lib/api');
+        const delivery = await api.get(`/deliveries/${driver.delivery_id}`) as any;
 
-      if (delivery && delivery.orders && delivery.orders.drop_address) {
-        const destination = {
-          lat: delivery.orders.drop_address.lat || driver.latitude + 0.05,
-          lng: delivery.orders.drop_address.lng || driver.longitude + 0.05
-        };
+        if (delivery) {
+          const ord = delivery.orders;
+          const dropAddr = ord?.drop_address || ord?.delivery_location || delivery.drop_location;
+          const pickupAddr = ord?.pickup_address || ord?.farmers?.address || delivery.pickup_location;
 
-        const route = await calculateRoute(
-          { lat: driver.latitude, lng: driver.longitude },
-          destination
-        );
+          const destination = {
+            lat: typeof dropAddr === 'object' && dropAddr?.lat ? dropAddr.lat : (driver.latitude + 0.04),
+            lng: typeof dropAddr === 'object' && dropAddr?.lng ? dropAddr.lng : (driver.longitude + 0.04),
+            label: typeof dropAddr === 'object' ? dropAddr?.address : dropAddr || 'Customer Address'
+          };
+          const pickup = {
+            lat: typeof pickupAddr === 'object' && pickupAddr?.lat ? pickupAddr.lat : (driver.latitude - 0.03),
+            lng: typeof pickupAddr === 'object' && pickupAddr?.lng ? pickupAddr.lng : (driver.longitude - 0.03),
+            label: typeof pickupAddr === 'object' ? pickupAddr?.address : pickupAddr || 'Farm Location'
+          };
+          setDropLocation(destination);
+          setPickupLocation(pickup);
 
-        const geometry = route?.geometry as any;
-        if (geometry && typeof geometry === 'object' && geometry.coordinates) {
-          const coords = geometry.coordinates.map((c: any) => ({ lat: c[1], lng: c[0] }));
-          setRouteGeometry(coords);
-        } else {
-          setRouteGeometry([
+          const route = await calculateRoute(
             { lat: driver.latitude, lng: driver.longitude },
             destination
-          ]);
+          );
+
+          const geometry = route?.geometry as any;
+          if (geometry && typeof geometry === 'object' && geometry.coordinates) {
+            const coords = geometry.coordinates.map((c: any) => ({ lat: c[1], lng: c[0] }));
+            setRouteGeometry(coords);
+          } else {
+            setRouteGeometry([
+              { lat: driver.latitude, lng: driver.longitude },
+              destination
+            ]);
+          }
         }
-      } else {
-        // Fallback if no coordinates found
-        setRouteGeometry([]);
+      } catch (error) {
+        console.warn("Delivery details fetch for map fallback:", error);
       }
-    } catch (error) {
-      console.error("Route calc failed", error);
+    } else {
+      setDropLocation(undefined);
+      setPickupLocation(undefined);
       setRouteGeometry([]);
     }
   };
@@ -152,17 +166,18 @@ export default function LogisticsMapScreen() {
       <View style={styles.content}>
         {!IS_MOBILE && renderSidePanel()}
         <View style={styles.mapContainer}>
-          {drivers.length === 0 ? (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-              <Text style={{ fontSize: 18, color: Colors.textSecondary, fontWeight: 'bold' }}>No live driver locations</Text>
-              <Text style={{ fontSize: 14, color: Colors.textSecondary, marginTop: 8 }}>No active deliveries or drivers currently online.</Text>
+          <LiveMap
+            drivers={drivers}
+            onDriverPress={handleDriverPress}
+            routeGeometry={routeGeometry}
+            pickupLocation={pickupLocation}
+            dropLocation={dropLocation}
+          />
+          {drivers.length === 0 && (
+            <View style={styles.floatingNotice}>
+              <Ionicons name="information-circle" size={16} color="#0369A1" />
+              <Text style={styles.floatingNoticeText}>No drivers currently online. Map is active in standby mode.</Text>
             </View>
-          ) : (
-            <LiveMap
-              drivers={drivers}
-              onDriverPress={handleDriverPress}
-              routeGeometry={routeGeometry}
-            />
           )}
         </View>
         {IS_MOBILE && selectedDriver && (
@@ -250,5 +265,31 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderRadius: 8,
     alignItems: 'center',
-  }
+  },
+  floatingNotice: {
+    position: 'absolute',
+    bottom: 20,
+    left: '50%',
+    transform: [{ translateX: -150 }],
+    width: 300,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    zIndex: 1000,
+  },
+  floatingNoticeText: {
+    fontSize: 12,
+    color: '#0369A1',
+    fontWeight: '500',
+  },
 });

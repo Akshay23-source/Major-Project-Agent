@@ -7,10 +7,12 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert
+  Alert,
+  Modal,
 } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { getOrderById, updateOrderStatus, Order } from '../../../src/services/orders';
 import { getDeliveryByOrderId, createDelivery } from '../../../src/services/deliveries';
 import { getPaymentByOrderId, getSettlementByOrderId } from '../../../src/services/finance';
@@ -26,6 +28,8 @@ export default function OrderDetailsScreen() {
   const [settlement, setSettlement] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [showFarmerModal, setShowFarmerModal] = useState(false);
+  const [showBuyerModal, setShowBuyerModal] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -93,6 +97,32 @@ export default function OrderDetailsScreen() {
     }
   };
 
+  const handleFarmerPress = () => {
+    if (order.farmer_id) {
+      router.push(`/farmers/${order.farmer_id}`);
+    } else {
+      setShowFarmerModal(true);
+    }
+  };
+
+  const handleBuyerPress = () => {
+    if (order.buyer_id) {
+      router.push(`/buyers/${order.buyer_id}`);
+    } else {
+      setShowBuyerModal(true);
+    }
+  };
+
+  const openPhone = (phone?: string) => {
+    if (!phone) return;
+    Linking.openURL(`tel:${phone}`);
+  };
+
+  const openAddressMap = (address?: string) => {
+    if (!address) return;
+    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`);
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
@@ -124,11 +154,11 @@ export default function OrderDetailsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        
+
         {/* Status Header */}
         <View style={styles.statusCard}>
           <View style={styles.statusHeaderRow}>
-            <Text style={styles.orderNumber}>{order.order_number || order.id.substring(0,8)}</Text>
+            <Text style={styles.orderNumber}>{order.order_number || order.id.substring(0, 8)}</Text>
             <StatusBadge status={order.status} />
           </View>
           <Text style={styles.orderDate}>{new Date(order.created_at).toLocaleString()}</Text>
@@ -175,12 +205,57 @@ export default function OrderDetailsScreen() {
 
         {/* Delivery Integration */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Delivery Logistics</Text>
-          {delivery ? (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <Text style={styles.sectionTitle}>Delivery Logistics</Text>
+            <StatusBadge status={delivery?.logistics_tracking_status || delivery?.status || order.logistics_status || 'PENDING'} />
+          </View>
+          
+          {delivery || order.accepted_by_driver_name || order.logistics_status ? (
             <View>
-              <Text style={styles.deliveryStatusText}>Delivery is currently: <Text style={{fontWeight: 'bold', color: Colors.primaryDark}}>{delivery.status}</Text></Text>
-              <TouchableOpacity style={styles.deliveryBtn} onPress={() => router.push(`/deliveries/${delivery.id}`)}>
-                <Ionicons name="bicycle-outline" size={20} color={Colors.surface} style={{marginRight: 8}} />
+              {order.tracking_id ? (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Tracking ID:</Text>
+                  <Text style={styles.detailValueBold}>{order.tracking_id}</Text>
+                </View>
+              ) : null}
+
+              {order.accepted_by_driver_name ? (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Assigned Driver:</Text>
+                  <Text style={styles.detailValueBold}>
+                    🚚 {order.accepted_by_driver_name} {delivery?.delivery_partners?.vehicle_number ? `(${delivery.delivery_partners.vehicle_number})` : ''}
+                  </Text>
+                </View>
+              ) : null}
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Pickup Location:</Text>
+                <Text style={styles.detailValue} numberOfLines={1}>{order.pickup_address || delivery?.pickup_location || 'Farm'}</Text>
+              </View>
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Delivery Address:</Text>
+                <Text style={styles.detailValue} numberOfLines={1}>{order.delivery_location || delivery?.drop_location || 'Customer Address'}</Text>
+              </View>
+
+              {order.accepted_at ? (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Accepted At:</Text>
+                  <Text style={styles.detailValue}>{new Date(order.accepted_at).toLocaleString()}</Text>
+                </View>
+              ) : null}
+
+              <TouchableOpacity
+                style={styles.deliveryBtn}
+                onPress={() => {
+                  if (delivery?.id) {
+                    router.push(`/deliveries/${delivery.id}`);
+                  } else {
+                    router.push(`/logistics/workspace/${order.id}`);
+                  }
+                }}
+              >
+                <Ionicons name="bicycle-outline" size={20} color={Colors.surface} style={{ marginRight: 8 }} />
                 <Text style={styles.deliveryBtnText}>View Delivery Details</Text>
               </TouchableOpacity>
             </View>
@@ -189,7 +264,7 @@ export default function OrderDetailsScreen() {
               <Text style={styles.deliveryStatusText}>No delivery arranged for this order.</Text>
               {order.status !== 'Cancelled' && (
                 <TouchableOpacity style={[styles.deliveryBtn, { backgroundColor: Colors.info }]} onPress={handleCreateDelivery}>
-                  <Ionicons name="add-circle-outline" size={20} color={Colors.surface} style={{marginRight: 8}} />
+                  <Ionicons name="add-circle-outline" size={20} color={Colors.surface} style={{ marginRight: 8 }} />
                   <Text style={styles.deliveryBtnText}>Create Delivery</Text>
                 </TouchableOpacity>
               )}
@@ -200,27 +275,29 @@ export default function OrderDetailsScreen() {
         {/* Parties */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Parties Involved</Text>
-          
-          <TouchableOpacity style={styles.partyRow} onPress={() => router.push(`/farmers/${order.farmer_id}`)}>
+
+          <TouchableOpacity style={styles.partyRow} onPress={handleFarmerPress} activeOpacity={0.7}>
             <View style={styles.partyIconWrap}>
               <Ionicons name="person" size={20} color={Colors.primary} />
             </View>
             <View style={styles.partyInfo}>
-              <Text style={styles.partyLabel}>Farmer</Text>
-              <Text style={styles.partyName}>{order.farmers?.name || 'Unknown'}</Text>
+              <Text style={styles.partyLabel}>Farmer (Supplier)</Text>
+              <Text style={styles.partyName}>{order.farmers?.name || order.pickup_contact_name || 'Farmer Details'}</Text>
+              <Text style={styles.partySub}>{order.farmers?.phone || order.pickup_contact_phone ? `📞 ${order.farmers?.phone || order.pickup_contact_phone}` : 'View profile'}</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={Colors.textLight} />
           </TouchableOpacity>
 
           <View style={styles.divider} />
 
-          <TouchableOpacity style={styles.partyRow} onPress={() => router.push(`/buyers/${order.buyer_id}`)}>
+          <TouchableOpacity style={styles.partyRow} onPress={handleBuyerPress} activeOpacity={0.7}>
             <View style={styles.partyIconWrap}>
               <Ionicons name="storefront" size={20} color={Colors.info} />
             </View>
             <View style={styles.partyInfo}>
-              <Text style={styles.partyLabel}>Buyer</Text>
-              <Text style={styles.partyName}>{order.buyers?.name || 'Unknown'}</Text>
+              <Text style={styles.partyLabel}>Buyer (Customer)</Text>
+              <Text style={styles.partyName}>{order.buyers?.name || order.customer_name || 'Buyer Details'}</Text>
+              <Text style={styles.partySub}>{order.buyers?.phone || order.customer_phone ? `📞 ${order.buyers?.phone || order.customer_phone}` : 'View profile'}</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={Colors.textLight} />
           </TouchableOpacity>
@@ -229,7 +306,7 @@ export default function OrderDetailsScreen() {
         {/* Product & Financials */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Order Summary</Text>
-          
+
           <View style={styles.productRow}>
             <Text style={styles.productName}>{order.product}</Text>
             <Text style={styles.productQty}>{order.quantity} {order.unit} @ ₹{order.price}</Text>
@@ -305,6 +382,142 @@ export default function OrderDetailsScreen() {
         )}
 
       </ScrollView>
+
+      {/* Farmer Details Modal */}
+      <Modal visible={showFarmerModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="leaf" size={20} color={Colors.primary} />
+                <Text style={styles.modalTitle}>Farmer / Supplier Details</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowFarmerModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.profileBadge}>
+                <Ionicons name="person" size={24} color={Colors.primary} />
+                <View style={{ marginLeft: 10, flex: 1 }}>
+                  <Text style={styles.profileName}>{order.farmers?.name || order.pickup_contact_name || 'Farmer'}</Text>
+                  <Text style={styles.profileTag}>Main Farm Marketplace Verified Supplier</Text>
+                </View>
+              </View>
+
+              <View style={styles.modalInfoRow}>
+                <Text style={styles.modalLabel}>Phone Number:</Text>
+                <Text style={styles.modalValue}>{order.farmers?.phone || order.pickup_contact_phone || 'Not available'}</Text>
+              </View>
+
+              <View style={styles.modalInfoRow}>
+                <Text style={styles.modalLabel}>Pickup Address:</Text>
+                <Text style={styles.modalValue}>{order.farmers?.location || order.farmers?.address || order.pickup_address || 'Farm location'}</Text>
+              </View>
+
+              {order.farmers?.village ? (
+                <View style={styles.modalInfoRow}>
+                  <Text style={styles.modalLabel}>Village / Region:</Text>
+                  <Text style={styles.modalValue}>{order.farmers.village}{order.farmers.district ? `, ${order.farmers.district}` : ''}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.modalInfoRow}>
+                <Text style={styles.modalLabel}>Produce Supplied:</Text>
+                <Text style={styles.modalValueBold}>{order.product} ({order.quantity} {order.unit})</Text>
+              </View>
+
+              <View style={styles.modalActions}>
+                {(order.farmers?.phone || order.pickup_contact_phone) && (
+                  <TouchableOpacity
+                    style={styles.modalCallBtn}
+                    onPress={() => openPhone(order.farmers?.phone || order.pickup_contact_phone)}
+                  >
+                    <Ionicons name="call" size={18} color="#FFFFFF" />
+                    <Text style={styles.modalBtnText}>Call Farmer</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.modalMapBtn}
+                  onPress={() => openAddressMap(order.farmers?.location || order.farmers?.address || order.pickup_address)}
+                >
+                  <Ionicons name="navigate" size={18} color={Colors.primary} />
+                  <Text style={styles.modalMapBtnText}>Map Location</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Buyer Details Modal */}
+      <Modal visible={showBuyerModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="storefront" size={20} color={Colors.info} />
+                <Text style={styles.modalTitle}>Buyer / Customer Details</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowBuyerModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.profileBadge}>
+                <Ionicons name="person-circle" size={28} color={Colors.info} />
+                <View style={{ marginLeft: 10, flex: 1 }}>
+                  <Text style={styles.profileName}>{order.buyers?.name || order.customer_name || order.drop_contact_name || 'Customer'}</Text>
+                  <Text style={styles.profileTag}>Main Farm Marketplace Customer</Text>
+                </View>
+              </View>
+
+              <View style={styles.modalInfoRow}>
+                <Text style={styles.modalLabel}>Contact Phone:</Text>
+                <Text style={styles.modalValue}>{order.buyers?.phone || order.customer_phone || order.drop_contact_phone || 'Not available'}</Text>
+              </View>
+
+              <View style={styles.modalInfoRow}>
+                <Text style={styles.modalLabel}>Delivery Destination:</Text>
+                <Text style={styles.modalValue}>{order.buyers?.address || order.delivery_location || (typeof order.drop_address === 'object' ? order.drop_address?.address : order.drop_address) || 'Customer Address'}</Text>
+              </View>
+
+              {order.drop_address?.pincode ? (
+                <View style={styles.modalInfoRow}>
+                  <Text style={styles.modalLabel}>Pincode:</Text>
+                  <Text style={styles.modalValue}>{order.drop_address.pincode}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.modalInfoRow}>
+                <Text style={styles.modalLabel}>Order Amount:</Text>
+                <Text style={styles.modalValueBold}>₹{order.total_amount} ({order.payment_status || 'PENDING'})</Text>
+              </View>
+
+              <View style={styles.modalActions}>
+                {(order.buyers?.phone || order.customer_phone || order.drop_contact_phone) && (
+                  <TouchableOpacity
+                    style={[styles.modalCallBtn, { backgroundColor: Colors.info }]}
+                    onPress={() => openPhone(order.buyers?.phone || order.customer_phone || order.drop_contact_phone)}
+                  >
+                    <Ionicons name="call" size={18} color="#FFFFFF" />
+                    <Text style={styles.modalBtnText}>Call Customer</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.modalMapBtn}
+                  onPress={() => openAddressMap(order.buyers?.address || order.delivery_location || (typeof order.drop_address === 'object' ? order.drop_address?.address : order.drop_address))}
+                >
+                  <Ionicons name="navigate" size={18} color={Colors.info} />
+                  <Text style={[styles.modalMapBtnText, { color: Colors.info }]}>Navigate</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -318,9 +531,9 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 18, color: Colors.text, marginTop: 16 },
   backBtn: { marginTop: 24, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: Colors.primary, borderRadius: 8 },
   backBtnText: { color: Colors.surface, fontWeight: 'bold' },
-  
+
   content: { padding: 16, paddingBottom: 40 },
-  
+
   statusCard: { backgroundColor: Colors.surface, padding: 16, borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: Colors.border },
   statusHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   orderNumber: { fontSize: 18, fontWeight: 'bold', color: Colors.primaryDark },
@@ -338,7 +551,7 @@ const styles = StyleSheet.create({
 
   section: { backgroundColor: Colors.surface, padding: 16, borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: Colors.border },
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.text, marginBottom: 16 },
-  
+
   deliveryStatusText: { fontSize: 14, color: Colors.textSecondary, marginBottom: 12 },
   deliveryBtn: { flexDirection: 'row', backgroundColor: Colors.primary, paddingVertical: 12, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   deliveryBtnText: { color: Colors.surface, fontWeight: 'bold', fontSize: 16 },
@@ -366,5 +579,33 @@ const styles = StyleSheet.create({
   grandTotalLabel: { fontSize: 16, fontWeight: 'bold', color: Colors.text },
   grandTotalValue: { fontSize: 20, fontWeight: 'bold', color: Colors.primaryDark },
 
-  notesText: { fontSize: 14, color: Colors.text, lineHeight: 20 }
+  notesText: { fontSize: 14, color: Colors.text, lineHeight: 20 },
+
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  detailLabel: { fontSize: 13, color: Colors.textSecondary },
+  detailValue: { fontSize: 13, color: Colors.text, flex: 1, textAlign: 'right' },
+  detailValueBold: { fontSize: 13, color: Colors.text, fontWeight: '700', flex: 1, textAlign: 'right' },
+  deliveryStatusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  deliveryDriverBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: `${Colors.primary}12`, padding: 10, borderRadius: 8, marginBottom: 12 },
+  deliveryDriverText: { fontSize: 13, color: Colors.primaryDark, fontWeight: '600', marginLeft: 8, flex: 1 },
+  trackingBadgeText: { fontSize: 12, fontWeight: 'bold', color: Colors.primaryDark, backgroundColor: `${Colors.primary}20`, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  partySub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: Colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '80%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottomWidth: 1, borderBottomColor: Colors.border, paddingBottom: 12 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: Colors.text },
+  modalBody: { gap: 12 },
+  profileBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background, padding: 12, borderRadius: 10, marginBottom: 8 },
+  profileName: { fontSize: 16, fontWeight: 'bold', color: Colors.text },
+  profileTag: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  modalInfoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  modalLabel: { fontSize: 14, color: Colors.textSecondary },
+  modalValue: { fontSize: 14, color: Colors.text, flex: 1, textAlign: 'right' },
+  modalValueBold: { fontSize: 14, color: Colors.text, fontWeight: 'bold', flex: 1, textAlign: 'right' },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 16 },
+  modalCallBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primary, paddingVertical: 12, borderRadius: 8 },
+  modalMapBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.background, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: Colors.border },
+  modalBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
+  modalMapBtnText: { color: Colors.primary, fontWeight: 'bold', fontSize: 14 }
 });

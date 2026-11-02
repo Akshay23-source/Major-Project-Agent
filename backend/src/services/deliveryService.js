@@ -280,6 +280,14 @@ const driverTransition = async (driverId, deliveryId, { status, notes, photo_url
       related_id: delivery._id,
       related_type: 'delivery',
     });
+  } else if (status === 'IN_TRANSIT' || status === 'OUT_FOR_DELIVERY') {
+    await notify(delivery.agent_id, {
+      type: 'Delivery Update',
+      title: 'Order Out for Delivery',
+      message: `${driverName} is out for delivery with order ${order?.order_number || ''}.`,
+      related_id: delivery._id,
+      related_type: 'delivery',
+    });
   } else if (status === 'DELIVERED') {
     await Driver.updateOne({ _id: driverId }, { $set: { status: 'ONLINE' }, $inc: { completed_deliveries: 1 } });
     if (delivery.vehicle_id) {

@@ -34,6 +34,14 @@ export const acceptDelivery = async (deliveryId: string) => api.post<any>(`/driv
 
 export const getDeliveryDetails = async (deliveryId: string) => api.get<any>(`/driver/deliveries/${deliveryId}`);
 
+export const rejectDelivery = async (deliveryId: string, reason?: string) =>
+  api.post<any>(`/driver/deliveries/${deliveryId}/reject`, { reason });
+
+export const getDriverProfile = async () => api.get<any>('/driver/me');
+
+export const updateDriverStatus = async (status: 'ONLINE' | 'OFFLINE' | 'BUSY') =>
+  api.patch<any>('/driver/me/status', { status });
+
 export const transitionDriverStatus = async (
   deliveryId: string,
   currentStatus: string,

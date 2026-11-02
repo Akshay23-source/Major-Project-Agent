@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, TextInput, Alert } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppHeader } from '../../../src/components/ui/AppHeader';
 import { Colors } from '../../../src/theme/colors';
@@ -10,6 +10,7 @@ import { errorMessage } from '../../../src/lib/api';
 const EMPTY_FORM = { name: '', phone: '', vehicle_number: '', vehicle_type: '' };
 
 export default function DeliveryPartnersScreen() {
+  const router = useRouter();
   const [partners, setPartners] = useState<DeliveryPartner[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -106,7 +107,12 @@ export default function DeliveryPartnersScreen() {
             <Text style={styles.emptyText}>No delivery partners found.</Text>
           ) : (
             partners.map(p => (
-              <View key={p.id} style={styles.card}>
+              <TouchableOpacity
+                key={p.id}
+                style={styles.card}
+                onPress={() => router.push(`/delivery-partners/${p.id}`)}
+                activeOpacity={0.75}
+              >
                 <View style={styles.cardHeader}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.pName}>{p.name}</Text>
@@ -152,7 +158,11 @@ export default function DeliveryPartnersScreen() {
                   <Text style={styles.pStat}>✅ {p.completed_deliveries || 0} Delivered</Text>
                   <Text style={styles.pStat}>❌ {p.failed_deliveries || 0} Failed</Text>
                 </View>
-              </View>
+                <View style={styles.viewDetailsRow}>
+                  <Text style={styles.viewDetailsText}>View Profile & History</Text>
+                  <Ionicons name="chevron-forward" size={14} color={Colors.primary} />
+                </View>
+              </TouchableOpacity>
             ))
           )}
         </ScrollView>
@@ -197,5 +207,7 @@ const styles = StyleSheet.create({
   assignmentOrder: { fontSize: 13, color: '#334155', fontWeight: '500' },
 
   statsRow: { flexDirection: 'row', paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border },
-  pStat: { fontSize: 14, fontWeight: '600', color: Colors.text, marginRight: 16 }
+  pStat: { fontSize: 14, fontWeight: '600', color: Colors.text, marginRight: 16 },
+  viewDetailsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 8, gap: 4 },
+  viewDetailsText: { fontSize: 12, color: Colors.primary, fontWeight: '600' },
 });
