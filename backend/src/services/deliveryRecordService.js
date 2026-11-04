@@ -158,21 +158,26 @@ const assignEmployee = async (agentId, id, employeeId) => {
 // ── single-step logistics helpers ─────────────
 const assignPartner = async (agentId, id, driverId) => {
   const d = await owned(agentId, id);
-  const driver = await Driver.findOne({ _id: driverId, agent_id: agentId });
+  const driver = await Driver.findById(driverId);
   if (!driver) throw badRequest('Delivery partner not found');
-  if (!['ONLINE', 'AVAILABLE'].includes(driver.status)) throw conflict(`${driver.name} is not available`);
+  if (['BUSY', 'ON_DELIVERY'].includes(driver.status)) throw conflict(`${driver.name} is currently busy on another delivery`);
   d.delivery_partner_id = driver._id;
+  d.driver_name = driver.name;
   d.status = 'PICKUP_ASSIGNED';
+  d.logistics_tracking_status = 'ASSIGNED';
   await d.save();
   driver.status = 'BUSY';
   await driver.save();
+  await Order.updateOne({ _id: d.order_id }, { $set: { accepted_by_driver_id: driver._id, accepted_by_driver_name: driver.name, logistics_status: 'PICKUP_ASSIGNED' } });
   await deliveryService.recordEvent(d, { eventType: 'ASSIGNED', description: `Assigned to partner ${driver.name}`, actorType: 'AGENT', actorId: agentId });
+  const { syncToMainApp } = require('./mainAppSyncService');
+  await syncToMainApp(d.order_id).catch(() => {});
   return d.toObject();
 };
 
 const assignVehicle = async (agentId, id, vehicleId) => {
   const d = await owned(agentId, id);
-  const vehicle = await Vehicle.findOne({ _id: vehicleId, agent_id: agentId });
+  const vehicle = await Vehicle.findById(vehicleId);
   if (!vehicle) throw badRequest('Vehicle not found');
   if (vehicle.availability_status !== 'AVAILABLE') throw conflict(`Vehicle ${vehicle.vehicle_number} is not available`);
   d.vehicle_id = vehicle._id;

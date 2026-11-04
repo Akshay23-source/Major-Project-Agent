@@ -129,10 +129,13 @@ const resolveAgent = async () => {
     console.error('[intake] MARKETPLACE_DEFAULT_AGENT_EMAIL is empty in backend/.env');
     throw new HttpError(503, 'Marketplace integration is not configured');
   }
-  const agent = await Agent.findOne({ email: env.marketplace.defaultAgentEmail }).lean();
+  let agent = await Agent.findOne({ email: env.marketplace.defaultAgentEmail }).lean();
   if (!agent) {
-    console.error('[intake] MARKETPLACE_DEFAULT_AGENT_EMAIL does not match any agent account');
-    throw new HttpError(503, 'Marketplace integration is not configured');
+    agent = await Agent.findOne().sort({ created_at: -1 }).lean();
+  }
+  if (!agent) {
+    console.error('[intake] No agent account found in database');
+    throw new HttpError(503, 'Marketplace integration is not configured: No agent found');
   }
   cachedAgent = agent;
   return agent;

@@ -14,7 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Colors } from "../../../src/theme/colors";
-import { getDeliveryDetails, transitionDriverStatus, DriverDeliveryStatus } from "../../../src/services/driver/deliveries";
+import { getDeliveryDetails, transitionDriverStatus, acceptDelivery, rejectDelivery, DriverDeliveryStatus } from "../../../src/services/driver/deliveries";
 import { startLocationTracking, stopLocationTracking } from "../../../src/services/driver/locationTracking";
 import { useLocalization } from "../../../src/hooks/useLocalization";
 import * as Linking from "expo-linking";
@@ -90,14 +90,78 @@ export default function DeliveryDetailsScreen() {
     }
   };
 
+  const handleAcceptDelivery = async () => {
+    setProcessing(true);
+    try {
+      await acceptDelivery(id);
+      Alert.alert("✅ Order Accepted", "You have accepted this delivery. Proceed to pickup.");
+      await loadData();
+    } catch (error: any) {
+      Alert.alert("Error", error?.message || "Could not accept delivery");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleRejectDelivery = async () => {
+    Alert.alert(
+      'Decline Order',
+      'Are you sure you want to decline this order? It will return to the queue for other delivery partners.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Decline',
+          style: 'destructive',
+          onPress: async () => {
+            setProcessing(true);
+            try {
+              await rejectDelivery(id, 'Declined by driver');
+              Alert.alert('Declined', 'Order returned to queue.');
+              router.back();
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Could not decline order');
+            } finally {
+              setProcessing(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const getNextStateButton = () => {
     if (!delivery) return null;
     const status = delivery.logistics_tracking_status;
     let nextStatus: DriverDeliveryStatus | null = null;
     let label = "";
 
+    // If unassigned or pending pickup assignment, allow driver to Accept or Reject
+    if (status === 'PENDING' || status === 'AWAITING_PICKUP' || status === 'ASSIGNED' || !delivery.delivery_partner_id) {
+      return (
+        <View style={{ gap: 10 }}>
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={handleAcceptDelivery}
+            disabled={processing}
+          >
+            {processing ? (
+              <ActivityIndicator color={Colors.surface} />
+            ) : (
+              <Text style={styles.actionButtonText}>Accept Delivery</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.actionButton, { backgroundColor: '#DC2626' }]} 
+            onPress={handleRejectDelivery}
+            disabled={processing}
+          >
+            <Text style={styles.actionButtonText}>Decline / Reject</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     switch (status) {
-      case 'ASSIGNED': nextStatus = 'ACCEPTED'; label = t('driver.accepted') || 'Accept'; break;
       case 'ACCEPTED': nextStatus = 'DRIVER_EN_ROUTE'; label = t('driver.enRoute') || 'En Route to Farm'; break;
       case 'DRIVER_EN_ROUTE': nextStatus = 'ARRIVED_AT_FARM'; label = t('driver.arrivedAtFarm') || 'Arrived at Farm'; break;
       case 'ARRIVED_AT_FARM': nextStatus = 'PICKED_UP'; label = t('driver.pickedUp') || 'Picked Up'; break;

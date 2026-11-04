@@ -76,7 +76,49 @@ const recordEvent = async (delivery, { eventType, description, latitude, longitu
 const latestDelivery = (orderId) => DeliveryJob.findOne({ order_id: orderId }).sort({ created_at: -1 });
 
 const getOwnedOrder = async (agentId, orderId) => {
-  const order = await Order.findOne({ _id: orderId, agent_id: agentId });
+  const { getAllowedAgentIds } = require('./orderService');
+  const allowed = await getAllowedAgentIds(agentId);
+
+  const authFilter = {
+    $or: [
+      { agent_id: { $in: allowed } },
+      { source: 'MARKETPLACE' },
+      { agent_id: null },
+      { agent_id: { $exists: false } },
+    ],
+  };
+
+  // 1. Try finding by order _id
+  let order = null;
+  try {
+    order = await Order.findOne({ _id: orderId, ...authFilter });
+  } catch {
+    // ignore
+  }
+
+  // 2. If not found, check if orderId is a DeliveryJob _id
+  if (!order) {
+    try {
+      const d = await DeliveryJob.findById(orderId).lean();
+      if (d && d.order_id) {
+        order = await Order.findOne({ _id: d.order_id, ...authFilter });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 3. If not found, check by external_order_id or order_number
+  if (!order) {
+    order = await Order.findOne({
+      $or: [
+        { external_order_id: String(orderId) },
+        { order_number: String(orderId) },
+      ],
+      ...authFilter,
+    });
+  }
+
   if (!order) throw notFound('Order not found');
   return order;
 };
@@ -96,15 +138,19 @@ const dispatchOrder = async (agentId, orderId, { delivery_partner_id, vehicle_id
     status: { $nin: ['DELIVERED', 'CANCELLED', 'FAILED_DELIVERY', 'RETURNED', 'Cancelled', 'Delivered'] },
     delivery_partner_id: { $exists: true, $ne: null },
   }).lean();
-  if (active) throw conflict('A driver is already assigned to this order');
+  if (active && String(active.delivery_partner_id) !== String(delivery_partner_id)) {
+    throw conflict('A driver is already assigned to this order');
+  }
 
-  const driver = await Driver.findOne({ _id: delivery_partner_id, agent_id: agentId });
+  const driver = await Driver.findById(delivery_partner_id);
   if (!driver) throw badRequest('Delivery partner not found');
-  if (!['ONLINE', 'AVAILABLE'].includes(driver.status)) throw conflict(`${driver.name} is ${driver.status.toLowerCase()} and cannot take a new delivery`);
+  if (['BUSY', 'ON_DELIVERY'].includes(driver.status) && (!active || String(active.delivery_partner_id) !== String(driver._id))) {
+    throw conflict(`${driver.name} is currently busy on another delivery`);
+  }
 
   let vehicle = null;
   if (vehicle_id) {
-    vehicle = await Vehicle.findOne({ _id: vehicle_id, agent_id: agentId });
+    vehicle = await Vehicle.findById(vehicle_id);
     if (!vehicle) throw badRequest('Vehicle not found');
     if (vehicle.availability_status !== 'AVAILABLE') throw conflict(`Vehicle ${vehicle.vehicle_number} is not available`);
   }
@@ -112,10 +158,11 @@ const dispatchOrder = async (agentId, orderId, { delivery_partner_id, vehicle_id
   // Reuse an unassigned delivery (created from the Deliveries screen) or create one.
   let delivery = await DeliveryJob.findOne({ order_id: order._id, delivery_partner_id: null }).sort({ created_at: -1 });
   if (!delivery) {
-    delivery = new DeliveryJob({ agent_id: agentId, order_id: order._id, delivery_number: await nextDeliveryNumber() });
+    delivery = new DeliveryJob({ agent_id: order.agent_id || agentId, order_id: order._id, delivery_number: await nextDeliveryNumber() });
   }
   delivery.set({
     delivery_partner_id: driver._id,
+    driver_name: driver.name,
     vehicle_id: vehicle ? vehicle._id : delivery.vehicle_id,
     status: 'PICKUP_ASSIGNED',
     logistics_tracking_status: 'ASSIGNED',
@@ -133,8 +180,13 @@ const dispatchOrder = async (agentId, orderId, { delivery_partner_id, vehicle_id
     await vehicle.save();
   }
 
+  order.accepted_by_driver_id = driver._id;
+  order.accepted_by_driver_name = driver.name;
+  order.logistics_status = 'PICKUP_ASSIGNED';
+  await order.save();
+
   await Pickup.create({
-    agent_id: agentId,
+    agent_id: order.agent_id || agentId,
     order_id: order._id,
     farmer_id: order.farmer_id || undefined,
     delivery_partner_id: driver._id,
@@ -142,10 +194,13 @@ const dispatchOrder = async (agentId, orderId, { delivery_partner_id, vehicle_id
     status: 'ASSIGNED',
   });
 
-  await recordEvent(delivery, { eventType: 'ASSIGNED', description: 'Driver Assigned for Pickup', actorType: 'AGENT', actorId: agentId });
+  await recordEvent(delivery, { eventType: 'ASSIGNED', description: `Driver ${driver.name} Assigned for Pickup`, actorType: 'AGENT', actorId: agentId });
   if (vehicle) {
     await recordEvent(delivery, { eventType: 'VEHICLE_ASSIGNED', description: `Assigned vehicle ${vehicle.vehicle_number}`, actorType: 'AGENT', actorId: agentId });
   }
+
+  // Synchronize immediately to Farm Marketplace
+  await syncToMainApp(order._id).catch((err) => console.warn('[delivery] syncToMainApp error:', err.message));
 
   await notify(agentId, {
     type: 'Delivery Assigned',
@@ -170,26 +225,41 @@ const setOrderLogisticsStatus = async (agentId, orderId, status, { reason } = {}
   if (reason) order.cancellation_reason = reason;
   await order.save();
 
-  const delivery = await latestDelivery(order._id);
-  if (delivery) {
-    delivery.status = status;
-    if (status === 'PICKED_UP' && !delivery.pickup_time) delivery.pickup_time = new Date();
-    if (status === 'DELIVERED') {
-      delivery.delivery_time = new Date();
-      delivery.logistics_tracking_status = 'DELIVERED';
-    }
-    await delivery.save();
-    await DeliveryEvent.create({
-      delivery_id: delivery._id,
+  let delivery = await latestDelivery(order._id);
+  if (!delivery) {
+    delivery = new DeliveryJob({
+      delivery_number: await nextDeliveryNumber(),
+      agent_id: order.agent_id || agentId,
       order_id: order._id,
-      agent_id: agentId,
-      event_type: status,
-      description: `Status updated to ${status} by Agent`,
-      actor_type: 'AGENT',
-      actor_id: String(agentId),
+      pickup_location: order.pickup_address || 'Farm Pickup',
+      drop_location: order.delivery_location || 'Customer Location',
+      created_at: new Date(),
     });
-    if (rules.isTerminal(status)) await freeResources(delivery);
   }
+  delivery.status = status;
+  delivery.logistics_tracking_status = status;
+  if ((status === 'PICKED_UP' || status === 'IN_TRANSIT') && !delivery.pickup_time) {
+    delivery.pickup_time = new Date();
+  }
+  if (status === 'DELIVERED') {
+    delivery.delivery_time = new Date();
+    delivery.logistics_tracking_status = 'DELIVERED';
+  }
+  await delivery.save();
+
+  await DeliveryEvent.create({
+    delivery_id: delivery._id,
+    order_id: order._id,
+    agent_id: agentId,
+    event_type: status,
+    description: `Status updated to ${status} by Agent`,
+    actor_type: 'AGENT',
+    actor_id: String(agentId),
+  });
+  if (rules.isTerminal(status)) await freeResources(delivery);
+
+  // Synchronize immediately to Farm Marketplace
+  await syncToMainApp(order._id).catch((err) => console.warn('[delivery] syncToMainApp error:', err.message));
 
   if (order.external_order_id && previous !== status && rules.statusRank(status) !== null) {
     await sync.enqueue(order, {
@@ -205,7 +275,10 @@ const setOrderLogisticsStatus = async (agentId, orderId, status, { reason } = {}
 
 /** Driver moves through their state machine. */
 const driverTransition = async (driverId, deliveryId, { status, notes, photo_url, latitude, longitude }) => {
-  const delivery = await DeliveryJob.findOne({ _id: deliveryId, delivery_partner_id: driverId });
+  const delivery = await DeliveryJob.findOne({
+    $or: [{ _id: deliveryId }, { order_id: deliveryId }],
+    delivery_partner_id: driverId,
+  });
   if (!delivery) throw notFound('Delivery not found');
 
   const current = delivery.logistics_tracking_status || 'ASSIGNED';
