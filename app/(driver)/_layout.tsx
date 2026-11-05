@@ -41,14 +41,14 @@ export default function DriverLayout() {
               tabBarIcon: ({ color }) => <Ionicons name="cube" size={24} color={color as string} />,
             }}
           />
-          {/* Hidden screens — accessible via navigation but not shown as tabs */}
           <Tabs.Screen
             name="incoming"
             options={{
-              href: null,
-              title: "Incoming Orders",
+              title: "Incoming",
+              tabBarIcon: ({ color }) => <Ionicons name="notifications" size={24} color={color as string} />,
             }}
           />
+          {/* Hidden screens — accessible via navigation but not shown as tabs */}
           <Tabs.Screen
             name="awaiting"
             options={{

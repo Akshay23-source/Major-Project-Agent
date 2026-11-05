@@ -188,4 +188,4 @@ const dispatchView = async (agentId, id) => {
   return { order, delivery: serialize(delivery), events: serialize(events) };
 };
 
-module.exports = { list, get, buyerOrders, withoutDelivery, create, updateStatus, dispatchView };
+module.exports = { list, get, buyerOrders, withoutDelivery, create, updateStatus, dispatchView, getAllowedAgentIds };

@@ -256,10 +256,18 @@ const reject = async (driverId, id, reason = 'Declined by driver') => {
 
 const get = async (driverId, id) => {
   const d = await DeliveryJob.findOne({
-    $or: [{ _id: id }, { order_id: id }],
-    delivery_partner_id: driverId,
+    $and: [
+      { $or: [{ _id: id }, { order_id: id }] },
+      { $or: [{ delivery_partner_id: driverId }, { delivery_partner_id: null }] },
+    ],
   }).lean();
-  if (!d) throw notFound('Delivery not found');
+  if (!d) {
+    const other = await DeliveryJob.findOne({ $or: [{ _id: id }, { order_id: id }] }).lean();
+    if (other && other.delivery_partner_id && String(other.delivery_partner_id) !== String(driverId)) {
+      throw conflict('This delivery has been assigned to another driver');
+    }
+    throw notFound('Delivery not found');
+  }
   return expand(serialize(d));
 };
 

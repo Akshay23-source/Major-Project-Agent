@@ -35,10 +35,10 @@ export default function DispatchScreen() {
       setOrder(orderData);
       setEvents(eventData || []);
 
-      // 3. Fetch partners for assignment if status is PENDING
-      if (orderData.logistics_status === 'PENDING') {
+      // 3. Fetch partners for assignment if status is PENDING or assignable
+      if (['PENDING', 'ORDER_RECEIVED', 'ORDER_CONFIRMED', 'AWAITING_PICKUP'].includes(orderData.logistics_status)) {
         const p = await getDeliveryPartners();
-        setPartners(p.filter(x => x.status === 'AVAILABLE' || x.status === 'ONLINE'));
+        setPartners(p.filter(x => x.status !== 'BUSY' && x.status !== 'ON_DELIVERY'));
       }
     } catch (e) {
       console.error(e);
@@ -56,9 +56,8 @@ export default function DispatchScreen() {
   const handleUpdateStatus = async (newStatus: string) => {
     setUpdating(true);
     try {
-      // Server updates the order + delivery, records the timeline event and
-      // notifies the Farm Marketplace for marketplace orders.
-      await setOrderLogisticsStatus(id as string, newStatus);
+      const targetId = order?._id || order?.id || (id as string);
+      await setOrderLogisticsStatus(targetId, newStatus);
 
       Alert.alert("Success", `Status updated to ${newStatus}.`);
       loadData();
@@ -76,9 +75,8 @@ export default function DispatchScreen() {
     }
     setUpdating(true);
     try {
-      // One call: creates the delivery, assigns the driver, records the timeline
-      // and notifies the Farm Marketplace for marketplace orders.
-      await dispatchOrder(id as string, {
+      const targetId = order?._id || order?.id || (id as string);
+      await dispatchOrder(targetId, {
         delivery_partner_id: selectedPartnerId,
         pickup_location: order.pickup_address || order.farmers?.village || 'Farm',
         drop_location: order.delivery_location || order.buyers?.city || 'City',
@@ -173,15 +171,28 @@ export default function DispatchScreen() {
                   )}
                 </View>
               )}
-              {order.logistics_status === 'PICKUP_ASSIGNED' && (
-                <TouchableOpacity style={styles.primaryActionBtn} onPress={() => handleUpdateStatus('IN_TRANSIT')}>
-                  <Text style={styles.primaryActionText}>Driver Picked Up - Start Transit</Text>
+              {order.logistics_status === 'PENDING' && (
+                <TouchableOpacity
+                  style={[styles.primaryActionBtn, { marginTop: 10, backgroundColor: Colors.primaryDark }]}
+                  onPress={() => handleUpdateStatus('IN_TRANSIT')}
+                >
+                  <Text style={styles.primaryActionText}>Accept & Start Transit Directly</Text>
                 </TouchableOpacity>
               )}
-              {order.logistics_status === 'IN_TRANSIT' && (
+              {['PICKUP_ASSIGNED', 'ACCEPTED', 'PICKED_UP'].includes(order.logistics_status) && (
+                <TouchableOpacity style={styles.primaryActionBtn} onPress={() => handleUpdateStatus('IN_TRANSIT')}>
+                  <Text style={styles.primaryActionText}>Picked Up - Start Transit</Text>
+                </TouchableOpacity>
+              )}
+              {['IN_TRANSIT', 'OUT_FOR_DELIVERY'].includes(order.logistics_status) && (
                 <TouchableOpacity style={styles.primaryActionBtn} onPress={() => handleUpdateStatus('DELIVERED')}>
                   <Text style={styles.primaryActionText}>Mark Delivered</Text>
                 </TouchableOpacity>
+              )}
+              {order.logistics_status === 'DELIVERED' && (
+                <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+                  <Text style={{ color: Colors.success, fontWeight: 'bold', fontSize: 16 }}>✓ Order Delivered</Text>
+                </View>
               )}
             </View>
           )}
